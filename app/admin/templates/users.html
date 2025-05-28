@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Пользователи - Админ-панель{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1><i class="fas fa-users"></i> Управление пользователями</h1>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Всего пользователей: {{ pagination.total }}</h5>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if users %}
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Имя</th>
+                                <th>Username</th>
+                                <th>Telegram ID</th>
+                                <th>Телефон</th>
+                                <th>Дата регистрации</th>
+                                <th>Заказов</th>
+                                <th>Статус</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr>
+                                <td>{{ user.id }}</td>
+                                <td>{{ user.full_name }}</td>
+                                <td>
+                                    {% if user.username %}
+                                        @{{ user.username }}
+                                    {% else %}
+                                        <span class="text-muted">не указан</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <code>{{ user.telegram_id }}</code>
+                                </td>
+                                <td>
+                                    {% if user.phone %}
+                                        {{ user.phone }}
+                                    {% else %}
+                                        <span class="text-muted">не указан</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ user.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                                <td>
+                                    <span class="badge bg-info">{{ user.orders|length }}</span>
+                                </td>
+                                <td>
+                                    {% if user.is_blocked %}
+                                        <span class="badge bg-danger">Заблокирован</span>
+                                    {% else %}
+                                        <span class="badge bg-success">Активен</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Пагинация -->
+                {% if pagination.total_pages > 1 %}
+                <nav>
+                    <ul class="pagination justify-content-center">
+                        {% if pagination.page > 1 %}
+                        <li class="page-item">
+                            <a class="page-link" href="/users?page={{ pagination.page - 1 }}">
+                                Предыдущая
+                            </a>
+                        </li>
+                        {% endif %}
+                        
+                        {% for p in range(1, pagination.total_pages + 1) %}
+                        <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                            <a class="page-link" href="/users?page={{ p }}">
+                                {{ p }}
+                            </a>
+                        </li>
+                        {% endfor %}
+                        
+                        {% if pagination.page < pagination.total_pages %}
+                        <li class="page-item">
+                            <a class="page-link" href="/users?page={{ pagination.page + 1 }}">
+                                Следующая
+                            </a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+                {% endif %}
+                
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-users fa-3x text-muted mb-3"></i>
+                    <h4 class="text-muted">Пользователи не найдены</h4>
+                    <p class="text-muted">Пока нет зарегистрированных пользователей</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

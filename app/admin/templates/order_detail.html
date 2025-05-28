@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}Заказ #{{ order.id }} - Админ-панель{% endblock %}
+
+{% block content %}
+<!-- Уведомления об успешных операциях -->
+{% if request.query_params.get('success') == 'price_updated' %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="fas fa-check-circle"></i> Цена успешно обновлена и уведомление отправлено пользователю!
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% elif request.query_params.get('success') == 'status_updated' %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="fas fa-check-circle"></i> Статус заказа успешно обновлен!
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h1><i class="fas fa-file-alt"></i> Заказ #{{ order.id }}</h1>
+            <a href="/orders" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Назад к списку
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-info-circle"></i> Информация о заказе</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Основная информация</h6>
+                        <table class="table table-borderless">
+                            <tr>
+                                <td><strong>Тип работы:</strong></td>
+                                <td>{{ order.work_type }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Предмет:</strong></td>
+                                <td>{{ order.subject }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Объем:</strong></td>
+                                <td>{{ order.volume }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Срок:</strong></td>
+                                <td>{{ order.deadline }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Создан:</strong></td>
+                                <td>{{ order.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Обновлен:</strong></td>
+                                <td>{{ order.updated_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Статус и цена</h6>
+                        <table class="table table-borderless">
+                            <tr>
+                                <td><strong>Статус:</strong></td>
+                                <td>
+                                    <span class="badge 
+                                        {% if order.status.value == 'new' %}bg-primary
+                                        {% elif order.status.value == 'in_progress' %}bg-warning
+                                        {% elif order.status.value == 'ready' %}bg-success
+                                        {% elif order.status.value == 'waiting_payment' %}bg-info
+                                        {% elif order.status.value == 'sent' %}bg-success
+                                        {% elif order.status.value == 'cancelled' %}bg-danger
+                                        {% else %}bg-secondary{% endif %}">
+                                        {{ order.status.value.replace('_', ' ').title() }}
+                                    </span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Цена:</strong></td>
+                                <td>
+                                    {% if order.price %}
+                                        {{ order.price }} ₽
+                                    {% else %}
+                                        <span class="text-muted">не указана</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <h6>Тема работы</h6>
+                <p class="border p-3 bg-light">{{ order.topic }}</p>
+                
+                {% if order.requirements %}
+                <h6>Требования</h6>
+                <p class="border p-3 bg-light">{{ order.requirements }}</p>
+                {% endif %}
+                  {% if order.files %}
+                <h6>Прикрепленные файлы</h6>
+                <div class="list-group">
+                    {% for file in order.files %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fas fa-file"></i> {{ file.filename }}
+                            {% if file.file_size %}
+                            <small class="text-muted">({{ (file.file_size / 1024 / 1024)|round(2) }} MB)</small>
+                            {% endif %}
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <small class="text-muted">{{ file.uploaded_at.strftime('%d.%m.%Y %H:%M') }}</small>
+                            <a href="/files/download/{{ file.id }}" class="btn btn-sm btn-outline-primary" title="Скачать файл">
+                                <i class="fas fa-download"></i>
+                            </a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <h6>Прикрепленные файлы</h6>
+                <p class="text-muted">Файлы не прикреплены</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-user"></i> Информация о клиенте</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless">
+                    <tr>
+                        <td><strong>Имя:</strong></td>
+                        <td>{{ order.user.full_name }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Telegram ID:</strong></td>
+                        <td>{{ order.user.telegram_id }}</td>
+                    </tr>
+                    {% if order.user.username %}
+                    <tr>
+                        <td><strong>Username:</strong></td>
+                        <td>@{{ order.user.username }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if order.user.phone %}
+                    <tr>
+                        <td><strong>Телефон:</strong></td>
+                        <td>{{ order.user.phone }}</td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <td><strong>Регистрация:</strong></td>
+                        <td>{{ order.user.created_at.strftime('%d.%m.%Y') }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5><i class="fas fa-cogs"></i> Управление заказом</h5>
+            </div>
+            <div class="card-body">
+                <!-- Изменение статуса -->
+                <form method="post" action="/orders/{{ order.id }}/status" class="mb-3">
+                    <label class="form-label">Изменить статус:</label>
+                    <div class="input-group">
+                        <select name="new_status" class="form-select">
+                            {% for status in statuses %}
+                            <option value="{{ status.value }}" {% if status == order.status %}selected{% endif %}>
+                                {{ status.value.replace('_', ' ').title() }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i>
+                        </button>
+                    </div>
+                </form>
+                
+                <!-- Установка цены -->
+                <form method="post" action="/orders/{{ order.id }}/price">
+                    <label class="form-label">Установить цену (₽):</label>
+                    <div class="input-group">
+                        <input type="number" name="price" class="form-control" step="0.01" 
+                               value="{{ order.price or '' }}" placeholder="Введите цену">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-ruble-sign"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
