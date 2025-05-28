@@ -14,7 +14,7 @@ from app.services.user_service import UserService
 from app.services.order_service import OrderService
 from app.database.models import OrderStatus
 
-from fastapi import HTTPException
+
 from fastapi.exception_handlers import (
     http_exception_handler,
     request_validation_exception_handler,
@@ -311,13 +311,13 @@ async def admin_users(
     )
 
 
-@app.get("/files/download/{file_id}")
+@app.api_route("/files/download/{file_id}", methods=["GET", "HEAD"])
 async def download_file(
     request: Request,
     file_id: int,
     db: Session = Depends(get_db)
 ):
-    """Скачивание файла заказа"""
+    """Скачивание файла заказа с поддержкой HEAD запросов для проверки"""
     verify_admin(request)
     
     # Получаем информацию о файле из базы данных
@@ -329,7 +329,7 @@ async def download_file(
         print(f"❌ Файл с ID {file_id} не найден в БД")
         raise HTTPException(status_code=404, detail="Файл не найден")
     
-    print(f"📁 Запрос на скачивание файла: {file_record.filename}")
+    print(f"📁 Запрос на {'проверку' if request.method == 'HEAD' else 'скачивание'} файла: {file_record.filename}")
     print(f"   Путь: {file_record.file_path}")
     
     # Проверяем существование файла на диске
@@ -338,12 +338,12 @@ async def download_file(
         print(f"❌ Файл не найден на диске: {file_path}")
         raise HTTPException(status_code=404, detail="Файл не найден на диске")
     
-    print(f"✅ Отправляем файл: {file_record.filename}")
+    print(f"✅ {'Проверяем' if request.method == 'HEAD' else 'Отправляем'} файл: {file_record.filename}")
     
-    # Возвращаем файл для скачивания
+    # Возвращаем файл с оригинальным именем из БД
     return FileResponse(
         path=file_path,
-        filename=file_record.filename,
+        filename=file_record.filename,  # Оригинальное имя из БД
         media_type='application/octet-stream'
     )
 
@@ -375,12 +375,13 @@ async def get_order_files(
         "files": [
             {
                 "id": file.id,
-                "filename": file.filename,
+                "filename": file.filename,  # Оригинальное имя
                 "file_size": file.file_size,
                 "file_type": file.file_type,
                 "uploaded_at": file.uploaded_at.isoformat(),
                 "download_url": f"/files/download/{file.id}",
-                "exists_on_disk": os.path.exists(file.file_path) if file.file_path else False
+                "exists_on_disk": os.path.exists(file.file_path) if file.file_path else False,
+                "file_path_on_disk": os.path.basename(file.file_path) if file.file_path else None  # Только имя файла на диске
             }
             for file in files
         ]
@@ -459,14 +460,18 @@ async def debug_order_files(
     
     for file in files:
         file_exists = os.path.exists(file.file_path) if file.file_path else False
+        disk_filename = os.path.basename(file.file_path) if file.file_path else None
+        
         debug_info["files"].append({
             "id": file.id,
-            "filename": file.filename,
+            "db_filename": file.filename,  # Имя в БД (оригинальное)
+            "disk_filename": disk_filename,  # Имя файла на диске
             "file_path": file.file_path,
             "file_size": file.file_size,
             "uploaded_at": str(file.uploaded_at),
             "exists_on_disk": file_exists,
-            "disk_size": os.path.getsize(file.file_path) if file_exists else None
+            "disk_size": os.path.getsize(file.file_path) if file_exists else None,
+            "size_match": os.path.getsize(file.file_path) == file.file_size if file_exists and file.file_size else None
         })
     
     return debug_info

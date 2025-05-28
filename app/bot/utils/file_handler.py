@@ -1,17 +1,17 @@
 import os
 import uuid
 from pathlib import Path
-from aiogram.types import File as TelegramFile
+from aiogram.types import File as TelegramFile, Document
 from aiogram import Bot
 from app.config import settings
 
 
-async def save_file(telegram_file: TelegramFile, order_id: int, bot: Bot) -> tuple[str, str]:
+async def save_file(document: Document, order_id: int, bot: Bot) -> tuple[str, str]:
     """
     Сохранить файл от пользователя
     
     Args:
-        telegram_file: Объект File от Telegram
+        document: Объект Document от Telegram
         order_id: ID заказа
         bot: Экземпляр бота для скачивания
         
@@ -23,30 +23,57 @@ async def save_file(telegram_file: TelegramFile, order_id: int, bot: Bot) -> tup
         order_dir = Path(settings.upload_path) / str(order_id)
         order_dir.mkdir(parents=True, exist_ok=True)
         
-        # Получаем оригинальное имя файла из пути Telegram
-        original_filename = "unknown_file"
-        if telegram_file.file_path:
-            original_filename = os.path.basename(telegram_file.file_path)
+        # 🔥 ИСПРАВЛЕНО: Получаем оригинальное имя файла из Document
+        original_filename = document.file_name
         
-        # Если имя файла пустое, генерируем его
-        if not original_filename or original_filename == "unknown_file":
+        # Если имя файла пустое или None, генерируем его
+        if not original_filename or original_filename.strip() == "":
+            # Пытаемся определить расширение по mime_type
             file_extension = ".bin"
-            if telegram_file.file_path and "." in telegram_file.file_path:
-                file_extension = "." + telegram_file.file_path.split(".")[-1]
+            if document.mime_type:
+                mime_extensions = {
+                    'application/pdf': '.pdf',
+                    'application/msword': '.doc',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+                    'text/plain': '.txt',
+                    'image/jpeg': '.jpg',
+                    'image/png': '.png',
+                    'application/zip': '.zip',
+                    'application/x-rar-compressed': '.rar'
+                }
+                file_extension = mime_extensions.get(document.mime_type, '.bin')
+            
             original_filename = f"file_{uuid.uuid4().hex[:8]}{file_extension}"
         
-        # 🔥 НОВОЕ: Добавляем префикс с номером заказа к имени файла
-        prefixed_filename = f"order{order_id}_{original_filename}"
-        file_path = order_dir / prefixed_filename
+        # 🔥 ИСПРАВЛЕНО: Сохраняем файл с ОРИГИНАЛЬНЫМ именем (без префиксов)
+        # Но чтобы избежать конфликтов, сохраняем в папке заказа
+        file_path = order_dir / original_filename
         
-        # Правильное скачивание файла через bot
+        # Если файл с таким именем уже существует, добавляем номер
+        counter = 1
+        base_name = Path(original_filename).stem
+        extension = Path(original_filename).suffix
+        
+        while file_path.exists():
+            new_filename = f"{base_name}_{counter}{extension}"
+            file_path = order_dir / new_filename
+            counter += 1
+        
+        # Получаем файл от Telegram и скачиваем его
+        telegram_file = await bot.get_file(document.file_id)
         await bot.download_file(telegram_file.file_path, file_path)
         
-        # Возвращаем оригинальное имя для отображения в БД, но файл сохранен с префиксом
-        return original_filename, str(file_path)
+        # Возвращаем имя сохраненного файла и путь
+        final_filename = file_path.name
+        
+        print(f"✅ Файл сохранен: {original_filename} -> {final_filename}")
+        print(f"   Путь: {file_path}")
+        print(f"   Размер: {document.file_size} байт")
+        
+        return final_filename, str(file_path)
         
     except Exception as e:
-        print(f"❌ Ошибка сохранения файла: {e}")
+        print(f"❌ Ошибка сохранения файла {original_filename}: {e}")
         raise
 
 

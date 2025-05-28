@@ -216,27 +216,31 @@ async def process_file(message: Message, state: FSMContext):
         return
     
     # Проверяем тип файла
-    if not is_allowed_file_type(document.file_name):
+    if document.file_name and not is_allowed_file_type(document.file_name):
         await message.answer(
             f"❌ Неподдерживаемый тип файла: {document.file_name}\n"
             f"Поддерживаются: PDF, DOC, DOCX, TXT, JPG, PNG, ZIP и др."
         )
         return
     
-    # Сохраняем информацию о файле в состоянии (пока без загрузки)
+    # 🔥 ИСПРАВЛЕНО: Сохраняем Document объект целиком
     data = await state.get_data()
     files = data.get('files', [])
     
     files.append({
         'file_id': document.file_id,
-        'filename': document.file_name,
-        'size': document.file_size
+        'filename': document.file_name or f"Файл_{len(files)+1}",
+        'size': document.file_size,
+        'mime_type': document.mime_type,
+        'document': document  # 🔥 ВАЖНО: Сохраняем весь объект Document
     })
     
     await state.update_data(files=files)
     
+    filename_display = document.file_name or f"Файл_{len(files)}"
+    
     await message.answer(
-        f"✅ Файл <b>{document.file_name}</b> добавлен\n"
+        f"✅ Файл <b>{filename_display}</b> добавлен\n"
         f"📊 Размер: {format_file_size(document.file_size)}\n"
         f"📎 Всего файлов: {len(files)}",
         parse_mode="HTML"
@@ -315,8 +319,10 @@ async def process_confirm(message: Message, state: FSMContext):
                 requirements=data.get('requirements')
             )
             
-            # 🔥 ИСПРАВЛЕНО: Правильное сохранение файлов с bot
+            # 🔥 ИСПРАВЛЕНО: Правильное сохранение файлов
             files_saved = 0
+            saved_files_info = []
+            
             if data.get('files'):
                 from aiogram import Bot
                 
@@ -325,27 +331,34 @@ async def process_confirm(message: Message, state: FSMContext):
                 try:
                     for i, file_info in enumerate(data['files']):
                         try:
-                            # Получаем файл от Telegram
-                            telegram_file = await bot.get_file(file_info['file_id'])
+                            # 🔥 ИСПРАВЛЕНО: Используем сохраненный Document объект
+                            document = file_info['document']
                             
-                            # 🔥 ИСПРАВЛЕНО: Передаем bot в функцию save_file
-                            original_filename, file_path = await save_file(telegram_file, order.id, bot)
+                            # Сохраняем файл с правильным именем
+                            saved_filename, file_path = await save_file(document, order.id, bot)
                             
                             # Определяем тип файла
                             file_type = None
-                            if original_filename and '.' in original_filename:
-                                file_type = original_filename.split('.')[-1].lower()
+                            if saved_filename and '.' in saved_filename:
+                                file_type = saved_filename.split('.')[-1].lower()
                             
                             # Сохраняем информацию о файле в БД
                             order_file = order_service.add_file_to_order(
                                 order_id=order.id,
-                                filename=original_filename,
+                                filename=saved_filename,  # 🔥 Используем имя сохраненного файла
                                 file_path=file_path,
-                                file_size=file_info.get('size', 0),
+                                file_size=document.file_size,
                                 file_type=file_type
                             )
                             
                             files_saved += 1
+                            saved_files_info.append({
+                                'original': file_info['filename'],
+                                'saved': saved_filename,
+                                'path': file_path
+                            })
+                            
+                            print(f"✅ Файл сохранен: {file_info['filename']} -> {saved_filename}")
                             
                         except Exception as e:
                             print(f"❌ Ошибка сохранения файла {file_info.get('filename', 'неизвестный')}: {e}")
@@ -371,9 +384,14 @@ async def process_confirm(message: Message, state: FSMContext):
         # Формируем сообщение об успехе
         success_text = f"✅ <b>Заказ #{order_id} создан!</b>\n\n"
         success_text += "📋 Ваш заказ принят в обработку.\n"
+        
         if files_saved > 0:
             success_text += f"📎 Прикреплено файлов: {files_saved}\n"
-        success_text += "🔔 Вы получите уведомление при изменении статуса.\n\n"
+            success_text += "\n📁 <b>Сохраненные файлы:</b>\n"
+            for file_info in saved_files_info:
+                success_text += f"• {file_info['saved']}\n"
+        
+        success_text += "\n🔔 Вы получите уведомление при изменении статуса.\n"
         success_text += "📱 Посмотреть статус заказа можно в разделе 'Мои заказы'"
         
         await message.answer(
@@ -383,7 +401,7 @@ async def process_confirm(message: Message, state: FSMContext):
         )
         
         # Уведомляем администратора о новом заказе
-        await send_admin_notification(order_id, user_data, data, files_saved)
+        await send_admin_notification(order_id, user_data, data, files_saved, saved_files_info)
     
     else:
         await message.answer(
@@ -392,7 +410,7 @@ async def process_confirm(message: Message, state: FSMContext):
         )
 
 
-async def send_admin_notification(order_id: int, user_data: dict, order_data: dict, files_count: int = 0):
+async def send_admin_notification(order_id: int, user_data: dict, order_data: dict, files_count: int = 0, files_info: list = None):
     """Отправить уведомление администратору о новом заказе"""
     try:
         from aiogram import Bot
@@ -421,6 +439,12 @@ async def send_admin_notification(order_id: int, user_data: dict, order_data: di
         
         if files_count > 0:
             admin_text += f"\n📎 <b>Файлов прикреплено:</b> {files_count}\n"
+            if files_info:
+                admin_text += "<b>Сохраненные файлы:</b>\n"
+                for file_info in files_info[:5]:  # Показываем только первые 5 файлов
+                    admin_text += f"• {file_info['saved']}\n"
+                if len(files_info) > 5:
+                    admin_text += f"• ... и еще {len(files_info) - 5} файлов\n"
         
         admin_text += f"\n🔗 <b>Админ-панель:</b> http://127.0.0.1:8000/orders/{order_id}\n"
         admin_text += f"\n💼 Заказ ожидает установки цены!"
@@ -431,6 +455,8 @@ async def send_admin_notification(order_id: int, user_data: dict, order_data: di
             text=admin_text,
             parse_mode="HTML"
         )
+        
+        print(f"✅ Уведомление о новом заказе #{order_id} отправлено админу")
         
         # Закрываем сессию бота
         await bot.session.close()
