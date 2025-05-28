@@ -3,12 +3,12 @@ from sqlalchemy.orm import sessionmaker, Session
 from app.config import settings
 
 # Создание движка базы данных для SQLite (синхронный)
-# Убираем async часть для синхронного подключения  
+# 🔥 ИСПРАВЛЕНО: Отключены SQL логи для чистоты консоли
 database_url = settings.database_url
 
 engine = create_engine(
     database_url,
-    echo=settings.debug,
+    echo=False,  # 🔥 ИЗМЕНЕНО: было echo=settings.debug, теперь False
     # Для SQLite добавляем проверку foreign keys
     connect_args={"check_same_thread": False} if "sqlite" in database_url else {}
 )

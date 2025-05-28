@@ -8,6 +8,7 @@ from app.database.models.user import User
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import math
+import asyncio
 
 
 class OrderService:
@@ -55,7 +56,8 @@ class OrderService:
             'total': total,
             'page': page,
             'per_page': per_page,
-            'total_pages': math.ceil(total / per_page) if total > 0 else 1        }
+            'total_pages': math.ceil(total / per_page) if total > 0 else 1
+        }
 
     def get_orders_by_status(self, status: OrderStatus = None, page: int = 1, 
                            per_page: int = 10) -> Dict[str, Any]:
@@ -87,13 +89,14 @@ class OrderService:
         order.updated_at = datetime.utcnow()
         
         self.db.commit()
+        
         # Добавляем запись в историю
         self.add_status_history(order_id, old_status, new_status, note)
         
         return True
 
     def update_order_price(self, order_id: int, price: float) -> bool:
-        """Установить цену заказа"""
+        """Установить цену заказа и отправить уведомление пользователю"""
         order = self.get_order_by_id(order_id)
         if not order:
             return False
@@ -102,19 +105,15 @@ class OrderService:
         order.price = price
         order.updated_at = datetime.utcnow()
         self.db.commit()
-          # Отправляем уведомление пользователю о новой цене
-        self._send_price_notification(order, old_price, price)
+        
+        # 🚨 ВАЖНО: Отправляем уведомление пользователю о новой цене
+        self._send_price_notification_sync(order, old_price, price)
         
         return True
     
-    def _send_price_notification(self, order: Order, old_price: float, new_price: float):
-        """Отправить уведомление пользователю о установке/изменении цены"""
+    def _send_price_notification_sync(self, order: Order, old_price: float, new_price: float):
+        """Отправить уведомление пользователю о установке/изменении цены (синхронно)"""
         try:
-            import asyncio
-            import threading
-            from app.bot.bot import bot
-            from app.bot.keyboards.client import get_price_response_keyboard
-            
             # Сохраняем данные до возможной потери связи с сессией
             user_telegram_id = order.user.telegram_id
             order_id = order.id
@@ -137,34 +136,63 @@ class OrderService:
             notification_text += f"💰 <b>Новая цена:</b> {new_price} ₽\n\n"
             notification_text += f"❓ <b>Принимаете предложенную цену?</b>"
             
-            # Отправляем уведомление асинхронно в отдельном потоке
-            def send_notification_sync():
-                async def send_notification():
-                    try:
-                        await bot.send_message(
-                            chat_id=user_telegram_id,
-                            text=notification_text,
-                            parse_mode="HTML",
-                            reply_markup=get_price_response_keyboard(order_id)
-                        )
-                        print(f"✅ Уведомление о цене отправлено пользователю {user_telegram_id}")
-                    except Exception as e:
-                        print(f"❌ Ошибка отправки уведомления о цене пользователю {user_telegram_id}: {e}")
-                
-                # Создаем новый event loop для потока
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(send_notification())
-                finally:
-                    loop.close()
-              # Запускаем в отдельном потоке
-            thread = threading.Thread(target=send_notification_sync)
+            # Создаем задачу для отправки уведомления
+            import threading
+            thread = threading.Thread(
+                target=self._run_async_notification,
+                args=(user_telegram_id, notification_text, order_id)
+            )
             thread.daemon = True
             thread.start()
             
+            print(f"✅ Задача уведомления о цене создана для пользователя {user_telegram_id}")
+            
         except Exception as e:
-            print(f"❌ Ошибка при отправке уведомления о цене: {e}")
+            print(f"❌ Ошибка при создании уведомления о цене: {e}")
+    
+    def _run_async_notification(self, user_telegram_id: int, notification_text: str, order_id: int):
+        """Запустить асинхронное уведомление в отдельном потоке"""
+        try:
+            # Создаем новый event loop для потока
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Запускаем асинхронную функцию
+            loop.run_until_complete(
+                self._send_notification_async(user_telegram_id, notification_text, order_id)
+            )
+            
+        except Exception as e:
+            print(f"❌ Ошибка при отправке уведомления в потоке: {e}")
+        finally:
+            try:
+                loop.close()
+            except:
+                pass
+    
+    async def _send_notification_async(self, user_telegram_id: int, notification_text: str, order_id: int):
+        """Асинхронная отправка уведомления"""
+        try:
+            from aiogram import Bot
+            from app.config import settings
+            from app.bot.keyboards.client import get_price_response_keyboard
+            
+            bot = Bot(token=settings.bot_token)
+            
+            await bot.send_message(
+                chat_id=user_telegram_id,
+                text=notification_text,
+                parse_mode="HTML",
+                reply_markup=get_price_response_keyboard(order_id)
+            )
+            
+            print(f"✅ Уведомление о цене отправлено пользователю {user_telegram_id}")
+            
+            # Закрываем сессию бота
+            await bot.session.close()
+            
+        except Exception as e:
+            print(f"❌ Ошибка отправки уведомления пользователю {user_telegram_id}: {e}")
     
     def add_status_history(self, order_id: int, old_status: OrderStatus, 
                           new_status: OrderStatus, note: str = None):

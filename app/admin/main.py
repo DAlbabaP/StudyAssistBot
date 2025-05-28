@@ -168,6 +168,36 @@ async def admin_order_detail(
     if not order:
         raise HTTPException(status_code=404, detail="Заказ не найден")
     
+    # 🔥 ИСПРАВЛЕНО: Явно загружаем файлы заказа
+    print(f"🔍 Загружаем детали заказа #{order_id}")
+    
+    # Способ 1: Через relationship (должен работать автоматически)
+    files_via_relationship = order.files
+    print(f"   Файлов через relationship: {len(files_via_relationship)}")
+    
+    # Способ 2: Через сервис (для надежности)
+    files_via_service = order_service.get_order_files(order_id)
+    print(f"   Файлов через сервис: {len(files_via_service)}")
+    
+    # Способ 3: Прямой запрос (для отладки)
+    from app.database.models.file import OrderFile
+    files_direct = db.query(OrderFile).filter(OrderFile.order_id == order_id).all()
+    print(f"   Файлов прямым запросом: {len(files_direct)}")
+    
+    # Используем файлы из прямого запроса для надежности
+    order.files = files_direct
+    
+    # Добавляем отладочную информацию
+    if files_direct:
+        print("   📎 Найденные файлы:")
+        for file in files_direct:
+            print(f"      • ID: {file.id}, Имя: {file.filename}")
+            print(f"        Путь: {file.file_path}")
+            print(f"        Размер: {file.file_size}")
+            print(f"        Существует: {os.path.exists(file.file_path) if file.file_path else False}")
+    else:
+        print("   📎 Файлов не найдено")
+    
     return templates.TemplateResponse(
         "order_detail.html",
         {
@@ -296,12 +326,19 @@ async def download_file(
     file_record = db.query(OrderFile).filter(OrderFile.id == file_id).first()
     
     if not file_record:
+        print(f"❌ Файл с ID {file_id} не найден в БД")
         raise HTTPException(status_code=404, detail="Файл не найден")
+    
+    print(f"📁 Запрос на скачивание файла: {file_record.filename}")
+    print(f"   Путь: {file_record.file_path}")
     
     # Проверяем существование файла на диске
     file_path = file_record.file_path
-    if not os.path.exists(file_path):
+    if not file_path or not os.path.exists(file_path):
+        print(f"❌ Файл не найден на диске: {file_path}")
         raise HTTPException(status_code=404, detail="Файл не найден на диске")
+    
+    print(f"✅ Отправляем файл: {file_record.filename}")
     
     # Возвращаем файл для скачивания
     return FileResponse(
@@ -321,16 +358,29 @@ async def get_order_files(
     verify_admin(request)
     
     order_service = OrderService(db)
+    
+    # Проверяем существование заказа
+    order = order_service.get_order_by_id(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Заказ не найден")
+    
+    # Получаем файлы
     files = order_service.get_order_files(order_id)
     
+    print(f"📁 API запрос файлов для заказа #{order_id}: найдено {len(files)} файлов")
+    
     return {
+        "order_id": order_id,
+        "files_count": len(files),
         "files": [
             {
                 "id": file.id,
                 "filename": file.filename,
                 "file_size": file.file_size,
+                "file_type": file.file_type,
                 "uploaded_at": file.uploaded_at.isoformat(),
-                "download_url": f"/files/download/{file.id}"
+                "download_url": f"/files/download/{file.id}",
+                "exists_on_disk": os.path.exists(file.file_path) if file.file_path else False
             }
             for file in files
         ]
@@ -387,7 +437,43 @@ async def general_exception_handler(request, exc):
         status_code=500
     )
 
+@app.get("/debug/files/{order_id}")
+async def debug_order_files(
+    request: Request,
+    order_id: int,
+    db: Session = Depends(get_db)
+):
+    """Отладочный эндпоинт для файлов заказа"""
+    verify_admin(request)
+    
+    from app.database.models.file import OrderFile
+    
+    # Прямой запрос файлов
+    files = db.query(OrderFile).filter(OrderFile.order_id == order_id).all()
+    
+    debug_info = {
+        "order_id": order_id,
+        "files_count": len(files),
+        "files": []
+    }
+    
+    for file in files:
+        file_exists = os.path.exists(file.file_path) if file.file_path else False
+        debug_info["files"].append({
+            "id": file.id,
+            "filename": file.filename,
+            "file_path": file.file_path,
+            "file_size": file.file_size,
+            "uploaded_at": str(file.uploaded_at),
+            "exists_on_disk": file_exists,
+            "disk_size": os.path.getsize(file.file_path) if file_exists else None
+        })
+    
+    return debug_info
+
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host=settings.admin_host, port=settings.admin_port)
+
+

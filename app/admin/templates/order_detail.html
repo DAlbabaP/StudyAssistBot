@@ -20,9 +20,14 @@
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center">
             <h1><i class="fas fa-file-alt"></i> Заказ #{{ order.id }}</h1>
-            <a href="/orders" class="btn btn-outline-secondary">
-                <i class="fas fa-arrow-left"></i> Назад к списку
-            </a>
+            <div>
+                <a href="/debug/files/{{ order.id }}" class="btn btn-sm btn-outline-info me-2" target="_blank">
+                    <i class="fas fa-bug"></i> Отладка файлов
+                </a>
+                <a href="/orders" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> Назад к списку
+                </a>
+            </div>
         </div>
     </div>
 </div>
@@ -105,29 +110,93 @@
                 <h6>Требования</h6>
                 <p class="border p-3 bg-light">{{ order.requirements }}</p>
                 {% endif %}
-                  {% if order.files %}
-                <h6>Прикрепленные файлы</h6>
-                <div class="list-group">
+                
+                <!-- 🚨 ИСПРАВЛЕНО: Улучшенное отображение файлов с отладкой -->
+                <h6><i class="fas fa-paperclip"></i> Прикрепленные файлы</h6>
+                
+                <!-- Отладочная информация (только для разработки) -->
+                <div class="alert alert-info small mb-3">
+                    <strong>Отладка:</strong> 
+                    Файлов в объекте order: {{ order.files|length if order.files else 0 }}
+                    {% if order.files %}
+                    <br>ID файлов: {% for file in order.files %}{{ file.id }}{% if not loop.last %}, {% endif %}{% endfor %}
+                    {% endif %}
+                </div>
+                
+                {% if order.files and order.files|length > 0 %}
+                <div class="list-group mb-3">
                     {% for file in order.files %}
                     <div class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                            <i class="fas fa-file"></i> {{ file.filename }}
-                            {% if file.file_size %}
-                            <small class="text-muted">({{ (file.file_size / 1024 / 1024)|round(2) }} MB)</small>
-                            {% endif %}
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-file-alt me-2 text-primary"></i>
+                            <div>
+                                <div class="fw-bold">{{ file.filename or 'Безымянный файл' }}</div>
+                                <small class="text-muted">
+                                    {% if file.file_size %}
+                                        {{ (file.file_size / 1024 / 1024)|round(2) }} MB
+                                    {% else %}
+                                        Размер неизвестен
+                                    {% endif %}
+                                    • Загружен: {{ file.uploaded_at.strftime('%d.%m.%Y %H:%M') }}
+                                    {% if file.file_type %}
+                                    • Тип: {{ file.file_type.upper() }}
+                                    {% endif %}
+                                </small>
+                                <!-- Отладочная информация для файла -->
+                                <div class="small text-warning">
+                                    ID: {{ file.id }} | Путь: {{ file.file_path }}
+                                </div>
+                            </div>
                         </div>
                         <div class="d-flex align-items-center gap-2">
-                            <small class="text-muted">{{ file.uploaded_at.strftime('%d.%m.%Y %H:%M') }}</small>
-                            <a href="/files/download/{{ file.id }}" class="btn btn-sm btn-outline-primary" title="Скачать файл">
-                                <i class="fas fa-download"></i>
+                            <!-- Кнопка скачивания файла -->
+                            <a href="/files/download/{{ file.id }}" 
+                               class="btn btn-sm btn-outline-primary" 
+                               title="Скачать файл {{ file.filename }}"
+                               download="{{ file.filename }}">
+                                <i class="fas fa-download"></i> Скачать
                             </a>
+                            
+                            <!-- Кнопка отладки -->
+                            <button type="button" 
+                                    class="btn btn-sm btn-outline-info"
+                                    onclick="checkFile('{{ file.id }}, {{ file.filename }}')"
+                                    title="Проверить файл">
+                                <i class="fas fa-search"></i>
+                            </button>
                         </div>
                     </div>
                     {% endfor %}
                 </div>
+                
+                <!-- Дополнительные действия с файлами -->
+                <div class="mt-3">
+                    <button type="button" 
+                            class="btn btn-sm btn-outline-secondary"
+                            onclick="loadFilesDebug('{{ order.id }}')">
+                        <i class="fas fa-sync"></i> Обновить список файлов
+                    </button>
+                    
+                    <a href="/orders/{{ order.id }}/files" 
+                       class="btn btn-sm btn-outline-info"
+                       target="_blank">
+                        <i class="fas fa-list"></i> API файлов
+                    </a>
+                </div>
+                
                 {% else %}
-                <h6>Прикрепленные файлы</h6>
-                <p class="text-muted">Файлы не прикреплены</p>
+                <div class="alert alert-warning">
+                    <i class="fas fa-info-circle"></i> К этому заказу не прикреплены файлы
+                    
+                    <!-- Кнопка для принудительной проверки файлов -->
+                    <div class="mt-2">
+                        <button type="button" 
+                                class="btn btn-sm btn-outline-primary"
+                                onclick="loadFilesDebug('{{ order.id }}')">
+                            <i class="fas fa-search"></i> Поиск файлов в БД
+                        </button>
+                    </div>
+                </div>
                 {% endif %}
             </div>
         </div>
@@ -146,7 +215,7 @@
                     </tr>
                     <tr>
                         <td><strong>Telegram ID:</strong></td>
-                        <td>{{ order.user.telegram_id }}</td>
+                        <td><code>{{ order.user.telegram_id }}</code></td>
                     </tr>
                     {% if order.user.username %}
                     <tr>
@@ -184,25 +253,118 @@
                             </option>
                             {% endfor %}
                         </select>
-                        <button type="submit" class="btn btn-primary">
+                        <button type="submit" class="btn btn-primary" title="Изменить статус">
                             <i class="fas fa-save"></i>
                         </button>
                     </div>
                 </form>
                 
-                <!-- Установка цены -->
+                <!-- 🚨 ИСПРАВЛЕНО: Установка цены с уведомлением -->
                 <form method="post" action="/orders/{{ order.id }}/price">
                     <label class="form-label">Установить цену (₽):</label>
                     <div class="input-group">
-                        <input type="number" name="price" class="form-control" step="0.01" 
-                               value="{{ order.price or '' }}" placeholder="Введите цену">
-                        <button type="submit" class="btn btn-success">
-                            <i class="fas fa-ruble-sign"></i>
+                        <input type="number" 
+                               name="price" 
+                               class="form-control" 
+                               step="0.01" 
+                               min="0"
+                               value="{{ order.price or '' }}" 
+                               placeholder="Введите цену"
+                               required>
+                        <button type="submit" 
+                                class="btn btn-success" 
+                                title="Установить цену и уведомить клиента">
+                            <i class="fas fa-ruble-sign"></i> Установить
                         </button>
                     </div>
+                    <small class="form-text text-muted">
+                        При установке цены клиент получит уведомление с возможностью принять или отклонить цену
+                    </small>
                 </form>
+            </div>
+        </div>
+        
+        <!-- Дополнительная информация -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-line"></i> Статистика</h5>
+            </div>
+            <div class="card-body">
+                <small class="text-muted">
+                    <strong>ID заказа:</strong> {{ order.id }}<br>
+                    <strong>Файлов:</strong> {{ order.files|length if order.files else 0 }}<br>
+                    <strong>Последнее обновление:</strong> {{ order.updated_at.strftime('%d.%m.%Y %H:%M') }}
+                </small>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+// Функция для проверки конкретного файла
+async function checkFile(fileId, filename) {
+    try {
+        const response = await fetch(`/files/download/${fileId}`, {method: 'HEAD'});
+        if (response.ok) {
+            alert(`✅ Файл "${filename}" доступен для скачивания`);
+        } else {
+            alert(`❌ Файл "${filename}" недоступен (${response.status})`);
+        }
+    } catch (error) {
+        alert(`❌ Ошибка проверки файла: ${error.message}`);
+    }
+}
+
+// Функция для загрузки отладочной информации о файлах
+async function loadFilesDebug(orderId) {
+    try {
+        const response = await fetch(`/orders/${orderId}/files`);
+        const data = await response.json();
+        
+        let message = `Файлов найдено: ${data.files_count}\n\n`;
+        
+        if (data.files && data.files.length > 0) {
+            data.files.forEach((file, index) => {
+                message += `${index + 1}. ${file.filename}\n`;
+                message += `   ID: ${file.id}\n`;
+                message += `   Размер: ${file.file_size || 'неизвестно'}\n`;
+                message += `   На диске: ${file.exists_on_disk ? '✅' : '❌'}\n\n`;
+            });
+        } else {
+            message += 'Файлы не найдены в базе данных';
+        }
+        
+        alert(message);
+        
+        // Обновляем страницу если найдены файлы
+        if (data.files_count > 0) {
+            location.reload();
+        }
+        
+    } catch (error) {
+        alert(`Ошибка загрузки информации о файлах: ${error.message}`);
+    }
+}
+
+// Подтверждение при установке цены
+document.querySelector('form[action*="/price"]').addEventListener('submit', function(e) {
+    const price = this.querySelector('input[name="price"]').value;
+    if (price && !confirm(`Установить цену ${price} ₽ и отправить уведомление клиенту?`)) {
+        e.preventDefault();
+    }
+});
+
+// Анимация при скачивании файлов
+document.querySelectorAll('a[href*="/files/download/"]').forEach(function(link) {
+    link.addEventListener('click', function() {
+        const icon = this.querySelector('i');
+        const originalClass = icon.className;
+        icon.className = 'fas fa-spinner fa-spin';
+        
+        setTimeout(function() {
+            icon.className = originalClass;
+        }, 2000);
+    });
+});
+</script>
 {% endblock %}

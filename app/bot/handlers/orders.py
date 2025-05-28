@@ -13,6 +13,7 @@ from app.bot.utils.file_handler import save_file, is_allowed_file_type, format_f
 from app.services.user_service import UserService
 from app.services.order_service import OrderService
 from app.database.connection import get_db_async
+from app.config import settings
 
 router = Router()
 
@@ -299,105 +300,140 @@ async def process_confirm(message: Message, state: FSMContext):
         user_service = UserService(db)
         order_service = OrderService(db)
         
-        # Получаем пользователя
-        user = user_service.get_user_by_telegram_id(message.from_user.id)
-        
-        # Создаем заказ
-        order = order_service.create_order(
-            user_id=user.id,
-            work_type=data['work_type'],
-            subject=data['subject'],
-            topic=data['topic'],
-            volume=data['volume'],
-            deadline=data['deadline'],
-            requirements=data.get('requirements')
-        )
-        
-        # Сохраняем файлы если есть
-        if data.get('files'):
-            from aiogram import Bot
-            from app.config import settings
+        try:
+            # Получаем пользователя
+            user = user_service.get_user_by_telegram_id(message.from_user.id)
             
-            bot = Bot(token=settings.bot_token)
+            # Создаем заказ
+            order = order_service.create_order(
+                user_id=user.id,
+                work_type=data['work_type'],
+                subject=data['subject'],
+                topic=data['topic'],
+                volume=data['volume'],
+                deadline=data['deadline'],
+                requirements=data.get('requirements')
+            )
             
-            for file_info in data['files']:
-                try:                    # Скачиваем файл
-                    file = await bot.get_file(file_info['file_id'])
-                    filename, file_path = await save_file(file, order.id)
+            # 🔥 ИСПРАВЛЕНО: Правильное сохранение файлов с bot
+            files_saved = 0
+            if data.get('files'):
+                from aiogram import Bot
+                
+                bot = Bot(token=settings.bot_token)
+                
+                try:
+                    for i, file_info in enumerate(data['files']):
+                        try:
+                            # Получаем файл от Telegram
+                            telegram_file = await bot.get_file(file_info['file_id'])
+                            
+                            # 🔥 ИСПРАВЛЕНО: Передаем bot в функцию save_file
+                            original_filename, file_path = await save_file(telegram_file, order.id, bot)
+                            
+                            # Определяем тип файла
+                            file_type = None
+                            if original_filename and '.' in original_filename:
+                                file_type = original_filename.split('.')[-1].lower()
+                            
+                            # Сохраняем информацию о файле в БД
+                            order_file = order_service.add_file_to_order(
+                                order_id=order.id,
+                                filename=original_filename,
+                                file_path=file_path,
+                                file_size=file_info.get('size', 0),
+                                file_type=file_type
+                            )
+                            
+                            files_saved += 1
+                            
+                        except Exception as e:
+                            print(f"❌ Ошибка сохранения файла {file_info.get('filename', 'неизвестный')}: {e}")
+                            continue
                     
-                    # Сохраняем в БД
-                    order_service.add_file_to_order(
-                        order_id=order.id,
-                        filename=filename,
-                        file_path=file_path,
-                        file_size=file_info['size']
-                    )
-                except Exception as e:
-                    print(f"Ошибка сохранения файла: {e}")
-        
-        # Сохраняем ID заказа и данные пользователя до закрытия сессии
-        order_id = order.id
-        user_data = {
-            'first_name': user.first_name,
-            'last_name': user.last_name,
-            'username': user.username,
-            'telegram_id': user.telegram_id
-        }
-        
-        db.close()
+                finally:
+                    await bot.session.close()
+            
+            # Сохраняем данные для уведомления админа
+            order_id = order.id
+            user_data = {
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'username': user.username,
+                'telegram_id': user.telegram_id
+            }
+            
+        finally:
+            db.close()
         
         await state.clear()
         
+        # Формируем сообщение об успехе
         success_text = f"✅ <b>Заказ #{order_id} создан!</b>\n\n"
         success_text += "📋 Ваш заказ принят в обработку.\n"
+        if files_saved > 0:
+            success_text += f"📎 Прикреплено файлов: {files_saved}\n"
         success_text += "🔔 Вы получите уведомление при изменении статуса.\n\n"
         success_text += "📱 Посмотреть статус заказа можно в разделе 'Мои заказы'"
         
         await message.answer(
             success_text,
             reply_markup=get_main_menu(),
-            parse_mode="HTML"        )
+            parse_mode="HTML"
+        )
         
         # Уведомляем администратора о новом заказе
-        try:
-            from app.bot.utils.text_formatter import format_admin_order_info
-            
-            admin_text = f"🆕 <b>НОВЫЙ ЗАКАЗ #{order_id}</b>\n\n"
-            admin_text += f"👤 <b>Клиент:</b> {user_data['first_name']}"
-            if user_data['last_name']:
-                admin_text += f" {user_data['last_name']}"
-            if user_data['username']:
-                admin_text += f" (@{user_data['username']})"
-            admin_text += f"\n📱 <b>Telegram ID:</b> {user_data['telegram_id']}\n\n"
-            
-            admin_text += f"📝 <b>Тип работы:</b> {data['work_type']}\n"
-            admin_text += f"📚 <b>Предмет:</b> {data['subject']}\n"
-            admin_text += f"📋 <b>Тема:</b> {data['topic']}\n"
-            admin_text += f"📏 <b>Объем:</b> {data['volume']}\n"
-            admin_text += f"⏰ <b>Срок:</b> {data['deadline']}\n"
-            
-            if data.get('requirements'):
-                admin_text += f"📌 <b>Требования:</b> {data['requirements'][:200]}"
-                if len(data['requirements']) > 200:
-                    admin_text += "..."
-                admin_text += "\n"
-            
-            if data.get('files'):
-                admin_text += f"\n📎 <b>Файлов загружено:</b> {len(data['files'])}\n"
-            
-            admin_text += f"\n🔗 <b>Просмотреть в админ-панели:</b> http://127.0.0.1:8000/orders/{order_id}\n"
-            admin_text += f"\n💼 Заказ ожидает вашего рассмотрения и установки цены!"
-            
-            await bot.send_message(
-                chat_id=settings.admin_user_id,
-                text=admin_text,
-                parse_mode="HTML"
-            )
-        except Exception as e:
-            print(f"Ошибка отправки уведомления админу: {e}")
+        await send_admin_notification(order_id, user_data, data, files_saved)
     
     else:
         await message.answer(
             "❌ Пожалуйста, выберите действие из предложенных вариантов",
             reply_markup=get_confirm_keyboard()
         )
+
+
+async def send_admin_notification(order_id: int, user_data: dict, order_data: dict, files_count: int = 0):
+    """Отправить уведомление администратору о новом заказе"""
+    try:
+        from aiogram import Bot
+        
+        bot = Bot(token=settings.bot_token)
+        
+        admin_text = f"🆕 <b>НОВЫЙ ЗАКАЗ #{order_id}</b>\n\n"
+        admin_text += f"👤 <b>Клиент:</b> {user_data['first_name']}"
+        if user_data['last_name']:
+            admin_text += f" {user_data['last_name']}"
+        if user_data['username']:
+            admin_text += f" (@{user_data['username']})"
+        admin_text += f"\n📱 <b>Telegram ID:</b> {user_data['telegram_id']}\n\n"
+        
+        admin_text += f"📝 <b>Тип работы:</b> {order_data['work_type']}\n"
+        admin_text += f"📚 <b>Предмет:</b> {order_data['subject']}\n"
+        admin_text += f"📋 <b>Тема:</b> {order_data['topic']}\n"
+        admin_text += f"📏 <b>Объем:</b> {order_data['volume']}\n"
+        admin_text += f"⏰ <b>Срок:</b> {order_data['deadline']}\n"
+        
+        if order_data.get('requirements'):
+            requirements_preview = order_data['requirements'][:200]
+            if len(order_data['requirements']) > 200:
+                requirements_preview += "..."
+            admin_text += f"📌 <b>Требования:</b> {requirements_preview}\n"
+        
+        if files_count > 0:
+            admin_text += f"\n📎 <b>Файлов прикреплено:</b> {files_count}\n"
+        
+        admin_text += f"\n🔗 <b>Админ-панель:</b> http://127.0.0.1:8000/orders/{order_id}\n"
+        admin_text += f"\n💼 Заказ ожидает установки цены!"
+        
+        # Отправляем уведомление админу
+        await bot.send_message(
+            chat_id=settings.admin_user_id,
+            text=admin_text,
+            parse_mode="HTML"
+        )
+        
+        # Закрываем сессию бота
+        await bot.session.close()
+        
+    except Exception as e:
+        print(f"❌ Ошибка отправки уведомления админу: {e}")
