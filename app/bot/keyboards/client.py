@@ -1,18 +1,21 @@
+# Обновите app/bot/keyboards/client.py
+
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from typing import List
 
 
 def get_main_menu() -> ReplyKeyboardMarkup:
-    """Главное меню клиента"""
+    """Главное меню клиента с кнопкой общения"""
     builder = ReplyKeyboardBuilder()
     builder.add(
         KeyboardButton(text="📝 Новый заказ"),
         KeyboardButton(text="📋 Мои заказы"),
+        KeyboardButton(text="💬 Написать администратору"),  # 🆕 НОВАЯ КНОПКА
         KeyboardButton(text="ℹ️ О нас"),
         KeyboardButton(text="☎️ Поддержка")
     )
-    builder.adjust(2, 2)
+    builder.adjust(2, 1, 2)  # 2 кнопки в первом ряду, 1 во втором, 2 в третьем
     return builder.as_markup(resize_keyboard=True)
 
 
@@ -112,6 +115,28 @@ def get_order_status_keyboard(order_id: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text="📋 Посмотреть заказ",
             callback_data=f"view_order:{order_id}"
+        ),
+        InlineKeyboardButton(
+            text="💬 Написать администратору",
+            callback_data=f"chat_admin:{order_id}"
         )
     )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_communication_keyboard(order_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура для общения по конкретному заказу"""
+    builder = InlineKeyboardBuilder()
+    builder.add(
+        InlineKeyboardButton(
+            text="💬 Написать по этому заказу",
+            callback_data=f"write_order:{order_id}"
+        ),
+        InlineKeyboardButton(
+            text="📋 Показать заказ",
+            callback_data=f"view_order:{order_id}"
+        )
+    )
+    builder.adjust(1)
     return builder.as_markup()

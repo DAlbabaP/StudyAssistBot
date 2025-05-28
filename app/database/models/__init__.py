@@ -1,4 +1,6 @@
 from sqlalchemy.ext.declarative import declarative_base
+# Добавьте импорт новой модели
+
 
 # Базовый класс для всех моделей
 Base = declarative_base()
@@ -11,7 +13,7 @@ from .user import User
 from .order import Order
 from .file import OrderFile
 from .status_history import StatusHistory
-
+from .message import OrderMessage
 
 def get_status_emoji(status: OrderStatus) -> str:
     """Получить эмодзи для статуса"""

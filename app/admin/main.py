@@ -8,6 +8,13 @@ from sqlalchemy.orm import Session
 from typing import Optional
 import os
 
+from fastapi import UploadFile, File, BackgroundTasks
+from app.services.communication_service import CommunicationService
+import aiofiles
+import uuid
+from pathlib import Path
+
+
 from app.config import settings
 from app.database.connection import get_db
 from app.services.user_service import UserService
@@ -116,6 +123,41 @@ async def admin_dashboard(
             "recent_orders": recent_orders['orders']
         }
     )
+
+@app.get("/admin/recent_messages")
+async def get_recent_user_messages(
+    request: Request,
+    limit: int = 20,
+    db: Session = Depends(get_db)
+):
+    """API для получения последних сообщений от пользователей"""
+    verify_admin(request)
+    
+    communication_service = CommunicationService(db)
+    recent_messages = communication_service.get_recent_user_messages(limit)
+    
+    return {
+        "messages_count": len(recent_messages),
+        "messages": recent_messages
+    }
+
+
+@app.get("/orders/{order_id}/unread_count")
+async def get_unread_messages_count(
+    request: Request,
+    order_id: int,
+    db: Session = Depends(get_db)
+):
+    """API для получения количества непрочитанных сообщений от пользователя"""
+    verify_admin(request)
+    
+    communication_service = CommunicationService(db)
+    unread_count = communication_service.get_unread_user_messages_count(order_id)
+    
+    return {
+        "order_id": order_id,
+        "unread_count": unread_count
+    }
 
 
 @app.get("/orders", response_class=HTMLResponse)
@@ -310,6 +352,43 @@ async def admin_users(
         }
     )
 
+@app.get("/admin/dashboard_stats")
+async def get_dashboard_stats(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Расширенная статистика для дашборда с информацией о сообщениях"""
+    verify_admin(request)
+    
+    user_service = UserService(db)
+    order_service = OrderService(db)
+    communication_service = CommunicationService(db)
+    
+    # Получаем обычную статистику
+    stats = order_service.get_orders_statistics()
+    users_count = user_service.get_users_count()
+    
+    # Добавляем статистику по сообщениям
+    from app.database.models.message import OrderMessage
+    
+    total_messages = db.query(OrderMessage).count()
+    user_messages = db.query(OrderMessage).filter(OrderMessage.from_admin == False).count()
+    admin_messages = db.query(OrderMessage).filter(OrderMessage.from_admin == True).count()
+    
+    # Последние сообщения от пользователей
+    recent_user_messages = communication_service.get_recent_user_messages(5)
+    
+    return {
+        "orders": stats,
+        "users_count": users_count,
+        "messages": {
+            "total_messages": total_messages,
+            "user_messages": user_messages,
+            "admin_messages": admin_messages,
+            "recent_user_messages": recent_user_messages
+        }
+    }
+
 
 @app.api_route("/files/download/{file_id}", methods=["GET", "HEAD"])
 async def download_file(
@@ -384,6 +463,49 @@ async def get_order_files(
                 "file_path_on_disk": os.path.basename(file.file_path) if file.file_path else None  # Только имя файла на диске
             }
             for file in files
+        ]
+    }
+@app.get("/orders/{order_id}/dialog")
+async def get_order_dialog(
+    request: Request,
+    order_id: int,
+    db: Session = Depends(get_db)
+):
+    """API для получения полного диалога по заказу (админ + пользователь)"""
+    verify_admin(request)
+    
+    communication_service = CommunicationService(db)
+    messages = communication_service.get_dialog_messages(order_id, limit=100)
+    
+    # Получаем информацию о заказе
+    order_service = OrderService(db)
+    order = order_service.get_order_by_id(order_id)
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Заказ не найден")
+    
+    return {
+        "order_id": order_id,
+        "order_info": {
+            "id": order.id,
+            "work_type": order.work_type,
+            "topic": order.short_topic,
+            "status": order.status.value,
+            "user_name": order.user.full_name,
+            "user_username": order.user.username
+        },
+        "messages_count": len(messages),
+        "messages": [
+            {
+                "id": msg.id,
+                "text": msg.message_text,
+                "from_admin": msg.from_admin,
+                "sender": msg.sender_label,
+                "sent_at": msg.sent_at.isoformat(),
+                "delivered": msg.delivered,
+                "telegram_message_id": msg.telegram_message_id
+            }
+            for msg in messages
         ]
     }
 
@@ -475,6 +597,214 @@ async def debug_order_files(
         })
     
     return debug_info
+
+@app.post("/orders/{order_id}/send_message")
+async def send_message_to_user(
+    request: Request,
+    order_id: int,
+    background_tasks: BackgroundTasks,
+    message: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Отправить сообщение пользователю"""
+    verify_admin(request)
+    
+    if not message or not message.strip():
+        raise HTTPException(status_code=400, detail="Сообщение не может быть пустым")
+    
+    # Проверяем существование заказа
+    order_service = OrderService(db)
+    order = order_service.get_order_by_id(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Заказ не найден")
+    
+    # Отправляем сообщение в фоне
+    communication_service = CommunicationService(db)
+    
+    async def send_message_background():
+        try:
+            success = await communication_service.send_message_to_user(
+                order_id=order_id,
+                message_text=message.strip(),
+                from_admin=True
+            )
+            if success:
+                print(f"✅ Сообщение успешно отправлено пользователю по заказу #{order_id}")
+            else:
+                print(f"❌ Не удалось отправить сообщение по заказу #{order_id}")
+        except Exception as e:
+            print(f"❌ Ошибка отправки сообщения: {e}")
+    
+    background_tasks.add_task(send_message_background)
+    
+    return RedirectResponse(f"/orders/{order_id}?success=message_sent", status_code=302)
+
+
+@app.post("/orders/{order_id}/upload_file")
+async def upload_admin_file(
+    request: Request,
+    order_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """Загрузить файл от админа для заказа"""
+    verify_admin(request)
+    
+    # Проверяем существование заказа
+    order_service = OrderService(db)
+    order = order_service.get_order_by_id(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Заказ не найден")
+    
+    # Проверяем файл
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Файл должен иметь имя")
+    
+    if file.size > settings.max_file_size:
+        raise HTTPException(
+            status_code=413, 
+            detail=f"Файл слишком большой. Максимум: {settings.max_file_size / 1024 / 1024:.1f} МБ"
+        )
+    
+    try:
+        # Создаем директорию для файлов админа
+        admin_files_dir = Path(settings.upload_path) / str(order_id) / "admin"
+        admin_files_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Генерируем уникальное имя файла (чтобы избежать конфликтов)
+        file_extension = Path(file.filename).suffix
+        unique_filename = f"{uuid.uuid4().hex[:8]}_{file.filename}"
+        file_path = admin_files_dir / unique_filename
+        
+        # Сохраняем файл
+        async with aiofiles.open(file_path, 'wb') as f:
+            content = await file.read()
+            await f.write(content)
+        
+        # Сохраняем в БД
+        communication_service = CommunicationService(db)
+        order_file = communication_service.save_admin_file(
+            order_id=order_id,
+            file_path=str(file_path),
+            original_filename=file.filename,
+            file_size=file.size
+        )
+        
+        print(f"✅ Файл от админа загружен: {file.filename} для заказа #{order_id}")
+        
+        return RedirectResponse(f"/orders/{order_id}?success=file_uploaded", status_code=302)
+        
+    except Exception as e:
+        print(f"❌ Ошибка загрузки файла: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка загрузки файла")
+
+
+@app.post("/orders/{order_id}/send_file/{file_id}")
+async def send_file_to_user(
+    request: Request,
+    order_id: int,
+    file_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """Отправить файл пользователю через Telegram"""
+    verify_admin(request)
+    
+    # Проверяем существование заказа и файла
+    order_service = OrderService(db)
+    order = order_service.get_order_by_id(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Заказ не найден")
+    
+    from app.database.models.file import OrderFile
+    file_record = db.query(OrderFile).filter(
+        OrderFile.id == file_id,
+        OrderFile.order_id == order_id
+    ).first()
+    
+    if not file_record:
+        raise HTTPException(status_code=404, detail="Файл не найден")
+    
+    # Отправляем файл в фоне
+    communication_service = CommunicationService(db)
+    
+    async def send_file_background():
+        try:
+            success = await communication_service.send_file_to_user(order_id, file_id)
+            if success:
+                print(f"✅ Файл {file_record.filename} успешно отправлен пользователю")
+            else:
+                print(f"❌ Не удалось отправить файл {file_record.filename}")
+        except Exception as e:
+            print(f"❌ Ошибка отправки файла: {e}")
+    
+    background_tasks.add_task(send_file_background)
+    
+    return RedirectResponse(f"/orders/{order_id}?success=file_sent", status_code=302)
+
+
+@app.get("/orders/{order_id}/messages")
+async def get_order_messages(
+    request: Request,
+    order_id: int,
+    db: Session = Depends(get_db)
+):
+    """API для получения сообщений по заказу"""
+    verify_admin(request)
+    
+    communication_service = CommunicationService(db)
+    messages = communication_service.get_order_messages(order_id)
+    
+    return {
+        "order_id": order_id,
+        "messages_count": len(messages),
+        "messages": [
+            {
+                "id": msg.id,
+                "text": msg.message_text,
+                "from_admin": msg.from_admin,
+                "sender": msg.sender_label,
+                "sent_at": msg.sent_at.isoformat(),
+                "delivered": msg.delivered,
+                "preview": msg.message_preview
+            }
+            for msg in messages
+        ]
+    }
+
+
+@app.get("/orders/{order_id}/admin_files")
+async def get_admin_files(
+    request: Request,
+    order_id: int,
+    db: Session = Depends(get_db)
+):
+    """API для получения файлов загруженных админом"""
+    verify_admin(request)
+    
+    from app.database.models.file import OrderFile
+    
+    admin_files = db.query(OrderFile).filter(
+        OrderFile.order_id == order_id,
+        OrderFile.uploaded_by_admin == True
+    ).all()
+    
+    return {
+        "order_id": order_id,
+        "admin_files_count": len(admin_files),
+        "files": [
+            {
+                "id": file.id,
+                "filename": file.filename,
+                "file_size": file.file_size,
+                "uploaded_at": file.uploaded_at.isoformat(),
+                "sent_to_user": file.sent_to_user,
+                "sent_at": file.sent_at.isoformat() if file.sent_at else None,
+                "exists_on_disk": os.path.exists(file.file_path) if file.file_path else False
+            }
+            for file in admin_files
+        ]
+    }    
 
 
 if __name__ == "__main__":

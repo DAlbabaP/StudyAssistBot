@@ -14,6 +14,21 @@
     <i class="fas fa-check-circle"></i> Статус заказа успешно обновлен!
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
+{% elif request.query_params.get('success') == 'message_sent' %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="fas fa-paper-plane"></i> Сообщение отправлено пользователю!
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% elif request.query_params.get('success') == 'file_uploaded' %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="fas fa-cloud-upload-alt"></i> Файл успешно загружен!
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% elif request.query_params.get('success') == 'file_sent' %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="fas fa-paper-plane"></i> Файл отправлен пользователю!
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
 {% endif %}
 
 <div class="row">
@@ -21,9 +36,9 @@
         <div class="d-flex justify-content-between align-items-center">
             <h1><i class="fas fa-file-alt"></i> Заказ #{{ order.id }}</h1>
             <div>
-                <a href="/debug/files/{{ order.id }}" class="btn btn-sm btn-outline-info me-2" target="_blank">
-                    <i class="fas fa-bug"></i> Отладка файлов
-                </a>
+                <button class="btn btn-sm btn-outline-primary me-2" onclick="showCommunicationPanel()">
+                    <i class="fas fa-comments"></i> Общение
+                </button>
                 <a href="/orders" class="btn btn-outline-secondary">
                     <i class="fas fa-arrow-left"></i> Назад к списку
                 </a>
@@ -111,161 +126,194 @@
                 <p class="border p-3 bg-light">{{ order.requirements }}</p>
                 {% endif %}
                 
-                <!-- 🔥 ПОЛНОСТЬЮ ИСПРАВЛЕННОЕ отображение файлов -->
-                <h6><i class="fas fa-paperclip"></i> Прикрепленные файлы</h6>
-                
-                {% if order.files and order.files|length > 0 %}
-                <div class="alert alert-info small mb-3">
-                    <strong>📊 Информация:</strong> 
-                    Найдено файлов: {{ order.files|length }}
-                    <br>
-                    <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="refreshFilesList()">
-                        <i class="fas fa-sync"></i> Обновить список
+                <!-- 🆕 ПАНЕЛЬ ОБЩЕНИЯ -->
+                <div id="communicationPanel" class="mt-4" style="display: none;">
+    <div class="card border-primary">
+        <div class="card-header bg-primary text-white">
+            <h6 class="mb-0 d-flex justify-content-between align-items-center">
+                <span>
+                    <i class="fas fa-comments"></i> Диалог с клиентом
+                    <span id="unreadBadge" class="badge bg-warning ms-2" style="display: none;">0</span>
+                </span>
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="hideCommunicationPanel()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </h6>
+        </div>
+        <div class="card-body">
+            <!-- Информация о клиенте -->
+            <div class="alert alert-info mb-3">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-user-circle me-2"></i>
+                    <div>
+                        <strong>{{ order.user.full_name }}</strong>
+                        {% if order.user.username %}(@{{ order.user.username }}){% endif %}
+                        <br>
+                        <small class="text-muted">
+                            Telegram ID: {{ order.user.telegram_id }} • 
+                            Заказ #{{ order.id }}: {{ order.work_type }}
+                        </small>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Диалоговое окно -->
+            <div class="border rounded mb-3" style="height: 400px; overflow-y: auto; background: #f8f9fa;" id="dialogWindow">
+                <div class="p-3">
+                    <div id="dialogMessages">
+                        <div class="text-center text-muted">
+                            <i class="fas fa-spinner fa-spin"></i> Загрузка диалога...
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Форма отправки сообщения -->
+            <form id="messageForm" method="post" action="/orders/{{ order.id }}/send_message" class="mb-3">
+                <div class="input-group">
+                    <textarea class="form-control" 
+                              id="messageInput" 
+                              name="message" 
+                              rows="2" 
+                              placeholder="Введите сообщение для клиента..."
+                              required></textarea>
+                    <button type="submit" class="btn btn-primary" id="sendButton">
+                        <i class="fas fa-paper-plane"></i> Отправить
                     </button>
                 </div>
-
-                <div class="list-group mb-3">
-                    {% for file in order.files %}
-                    <div class="list-group-item">
-                        <div class="row align-items-center">
-                            <div class="col-md-8">
-                                <div class="d-flex align-items-center">
-                                    <!-- Иконка файла -->
-                                    {% if file.file_type %}
-                                        {% if file.file_type.lower() == 'pdf' %}
-                                            <i class="fas fa-file-pdf me-2 text-danger" style="font-size: 1.5em;"></i>
-                                        {% elif file.file_type.lower() in ['doc', 'docx'] %}
-                                            <i class="fas fa-file-word me-2 text-primary" style="font-size: 1.5em;"></i>
-                                        {% elif file.file_type.lower() in ['jpg', 'jpeg', 'png', 'gif'] %}
-                                            <i class="fas fa-file-image me-2 text-success" style="font-size: 1.5em;"></i>
-                                        {% elif file.file_type.lower() in ['zip', 'rar'] %}
-                                            <i class="fas fa-file-archive me-2 text-warning" style="font-size: 1.5em;"></i>
-                                        {% else %}
-                                            <i class="fas fa-file me-2 text-secondary" style="font-size: 1.5em;"></i>
-                                        {% endif %}
-                                    {% else %}
-                                        <i class="fas fa-file me-2 text-secondary" style="font-size: 1.5em;"></i>
-                                    {% endif %}
-                                    
-                                    <div>
-                                        <!-- Оригинальное имя файла -->
-                                        <div class="fw-bold text-dark">
-                                            {{ file.filename or 'Безымянный файл' }}
+            </form>
+            
+            <!-- Быстрые ответы -->
+            <div class="mb-3">
+                <h6 class="small text-muted mb-2">Быстрые ответы:</h6>
+                <div class="btn-group-sm d-flex flex-wrap gap-1">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="sendQuickMessage('Здравствуйте! Ваш заказ принят в работу.')">
+                        📝 Принят в работу
+                    </button>
+                    <button type="button" class="btn btn-outline-success btn-sm" onclick="sendQuickMessage('Ваш заказ готов! Ожидаем оплату.')">
+                        ✅ Заказ готов
+                    </button>
+                    <button type="button" class="btn btn-outline-info btn-sm" onclick="sendQuickMessage('Спасибо за обращение! Скоро свяжемся с вами.')">
+                        🙏 Спасибо
+                    </button>
+                    <button type="button" class="btn btn-outline-warning btn-sm" onclick="sendQuickMessage('Пожалуйста, уточните детали по вашему заказу.')">
+                        ❓ Уточните детали
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Управление диалогом -->
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="loadFullDialog()">
+                        <i class="fas fa-sync"></i> Обновить диалог
+                    </button>
+                    <button type="button" class="btn btn-outline-info btn-sm" onclick="scrollToBottom()">
+                        <i class="fas fa-arrow-down"></i> Вниз
+                    </button>
+                </div>
+                <div>
+                    <small class="text-muted">
+                        Последнее обновление: <span id="lastUpdate">-</span>
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+                
+                <!-- Прикрепленные файлы -->
+                <h6><i class="fas fa-paperclip"></i> Файлы заказа</h6>
+                
+                <!-- Вкладки для файлов -->
+                <ul class="nav nav-tabs" id="filesTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="client-files-tab" data-bs-toggle="tab" data-bs-target="#client-files" type="button" role="tab">
+                            <i class="fas fa-user"></i> От клиента 
+                            <span class="badge bg-secondary ms-1">{{ order.client_files_count }}</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="admin-files-tab" data-bs-toggle="tab" data-bs-target="#admin-files" type="button" role="tab">
+                            <i class="fas fa-user-shield"></i> От админа 
+                            <span class="badge bg-secondary ms-1">{{ order.admin_files_count }}</span>
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content" id="filesTabsContent">
+                    <!-- Файлы от клиента -->
+                    <div class="tab-pane fade show active" id="client-files" role="tabpanel">
+                        <div class="p-3">
+                            {% set client_files = order.files | selectattr("uploaded_by_admin", "equalto", False) | list %}
+                            {% if client_files %}
+                            <div class="list-group">
+                                {% for file in client_files %}
+                                <div class="list-group-item">
+                                    <div class="row align-items-center">
+                                        <div class="col-md-8">
+                                            <div class="d-flex align-items-center">
+                                                <i class="fas fa-file me-2 text-primary"></i>
+                                                <div>
+                                                    <div class="fw-bold">{{ file.filename }}</div>
+                                                    <small class="text-muted">
+                                                        {{ (file.file_size / 1024 / 1024)|round(2) }} MB • 
+                                                        {{ file.uploaded_at.strftime('%d.%m.%Y %H:%M') }}
+                                                    </small>
+                                                </div>
+                                            </div>
                                         </div>
-                                        
-                                        <!-- Информация о файле -->
-                                        <small class="text-muted">
-                                            {% if file.file_size %}
-                                                📊 {{ (file.file_size / 1024 / 1024)|round(2) }} MB
-                                            {% else %}
-                                                📊 Размер неизвестен
-                                            {% endif %}
-                                            
-                                            • 📅 {{ file.uploaded_at.strftime('%d.%m.%Y %H:%M') }}
-                                            
-                                            {% if file.file_type %}
-                                                • 📝 {{ file.file_type.upper() }}
-                                            {% endif %}
-                                        </small>
-                                        
-                                        <!-- Техническая информация (можно убрать в продакшене) -->
-                                        <div class="small text-warning mt-1">
-                                            🔧 ID: {{ file.id }} 
-                                            {% if file.file_path %}
-                                                • Путь: ...{{ file.file_path.split('/')[-1] if '/' in file.file_path else file.file_path.split('\\')[-1] }}
-                                                • Существует: 
-                                                <span id="file-exists-{{ file.id }}" class="badge bg-secondary">проверяется...</span>
-                                            {% endif %}
+                                        <div class="col-md-4 text-end">
+                                            <a href="/files/download/{{ file.id }}" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-download"></i> Скачать
+                                            </a>
                                         </div>
                                     </div>
                                 </div>
+                                {% endfor %}
                             </div>
-                            
-                            <div class="col-md-4 text-end">
-                                <div class="btn-group" role="group">
-                                    <!-- Кнопка скачивания -->
-                                    <a href="/files/download/{{ file.id }}" 
-                                       class="btn btn-success btn-sm"
-                                       title="Скачать {{ file.filename }}"
-                                       download="{{ file.filename }}"
-                                       onclick="trackDownload('{{ file.id }}', '{{ file.filename }}')">
-                                        <i class="fas fa-download"></i> Скачать
-                                    </a>
-                                    
-                                    <!-- Кнопка проверки -->
-                                    <button type="button" 
-                                            class="btn btn-outline-info btn-sm"
-                                            onclick="checkFileStatus('{{ file.id }}', '{{ file.filename }}')"
-                                            title="Проверить файл">
-                                        <i class="fas fa-search"></i> Проверить
-                                    </button>
-                                    
-                                    <!-- Кнопка копирования имени -->
-                                    <button type="button" 
-                                            class="btn btn-outline-secondary btn-sm"
-                                            onclick="copyFileName('{{ file.filename }}')"
-                                            title="Копировать имя файла">
-                                        <i class="fas fa-copy"></i>
-                                    </button>
+                            {% else %}
+                            <div class="text-muted text-center py-3">
+                                <i class="fas fa-inbox"></i> Клиент не прикрепил файлы
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- Файлы от админа -->
+                    <div class="tab-pane fade" id="admin-files" role="tabpanel">
+                        <div class="p-3">
+                            <!-- Форма загрузки файла админом -->
+                            <div class="card bg-light mb-3">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        <i class="fas fa-cloud-upload-alt"></i> Загрузить файл для клиента
+                                    </h6>
+                                    <form method="post" action="/orders/{{ order.id }}/upload_file" enctype="multipart/form-data">
+                                        <div class="mb-3">
+                                            <input type="file" class="form-control" name="file" required>
+                                            <div class="form-text">Максимальный размер: 20 МБ</div>
+                                        </div>
+                                        <button type="submit" class="btn btn-success">
+                                            <i class="fas fa-upload"></i> Загрузить файл
+                                        </button>
+                                    </form>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-
-                <!-- Дополнительные действия -->
-                <div class="card bg-light">
-                    <div class="card-body">
-                        <h6 class="card-title">🔧 Действия с файлами</h6>
-                        <div class="btn-group me-2" role="group">
-                            <button type="button" 
-                                    class="btn btn-outline-primary btn-sm"
-                                    onclick="refreshFilesList()">
+                            
+                            <!-- Список файлов от админа -->
+                            <div id="adminFilesList">
+                                <div class="text-center text-muted">
+                                    <i class="fas fa-spinner fa-spin"></i> Загрузка файлов...
+                                </div>
+                            </div>
+                            
+                            <button type="button" class="btn btn-outline-secondary btn-sm mt-2" onclick="loadAdminFiles()">
                                 <i class="fas fa-sync"></i> Обновить список
                             </button>
-                            
-                            <a href="/orders/{{ order.id }}/files" 
-                               class="btn btn-outline-info btn-sm"
-                               target="_blank">
-                                <i class="fas fa-code"></i> API данные
-                            </a>
-                            
-                            <a href="/debug/files/{{ order.id }}" 
-                               class="btn btn-outline-warning btn-sm"
-                               target="_blank">
-                                <i class="fas fa-bug"></i> Полная отладка
-                            </a>
                         </div>
-                        
-                        <button type="button" 
-                                class="btn btn-outline-success btn-sm"
-                                onclick="checkAllFiles()">
-                            <i class="fas fa-check-double"></i> Проверить все файлы
-                        </button>
                     </div>
                 </div>
-
-                {% else %}
-                <div class="alert alert-warning">
-                    <i class="fas fa-exclamation-triangle"></i> 
-                    <strong>К этому заказу не прикреплены файлы</strong>
-                    
-                    <div class="mt-3">
-                        <button type="button" 
-                                class="btn btn-outline-primary"
-                                onclick="searchForFiles()">
-                            <i class="fas fa-search"></i> Поискать файлы в системе
-                        </button>
-                        
-                        <a href="/debug/files/{{ order.id }}" 
-                           class="btn btn-outline-info"
-                           target="_blank">
-                            <i class="fas fa-bug"></i> Проверить БД
-                        </a>
-                    </div>
-                </div>
-                {% endif %}
             </div>
         </div>
     </div>
@@ -291,17 +339,27 @@
                         <td>@{{ order.user.username }}</td>
                     </tr>
                     {% endif %}
-                    {% if order.user.phone %}
-                    <tr>
-                        <td><strong>Телефон:</strong></td>
-                        <td>{{ order.user.phone }}</td>
-                    </tr>
-                    {% endif %}
                     <tr>
                         <td><strong>Регистрация:</strong></td>
                         <td>{{ order.user.created_at.strftime('%d.%m.%Y') }}</td>
                     </tr>
                 </table>
+                
+                <!-- 🆕 БЫСТРОЕ ОБЩЕНИЕ -->
+                <div class="mt-3">
+                    <h6>Быстрые действия:</h6>
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="showCommunicationPanel()">
+                            <i class="fas fa-comments"></i> Написать клиенту
+                        </button>
+                        <button type="button" class="btn btn-outline-success btn-sm" onclick="sendQuickMessage('Здравствуйте! Ваш заказ принят в работу.')">
+                            <i class="fas fa-play"></i> "Принят в работу"
+                        </button>
+                        <button type="button" class="btn btn-outline-info btn-sm" onclick="sendQuickMessage('Ваш заказ готов! Ожидаем оплату.')">
+                            <i class="fas fa-check"></i> "Заказ готов"
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -327,7 +385,7 @@
                     </div>
                 </form>
                 
-                <!-- Установка цены с уведомлением -->
+                <!-- Установка цены -->
                 <form method="post" action="/orders/{{ order.id }}/price">
                     <label class="form-label">Установить цену (₽):</label>
                     <div class="input-group">
@@ -342,291 +400,412 @@
                         <button type="submit" 
                                 class="btn btn-success" 
                                 title="Установить цену и уведомить клиента">
-                            <i class="fas fa-ruble-sign"></i> Установить
+                            <i class="fas fa-ruble-sign"></i>
                         </button>
                     </div>
                     <small class="form-text text-muted">
-                        При установке цены клиент получит уведомление с возможностью принять или отклонить цену
+                        Клиент получит уведомление с возможностью принять или отклонить цену
                     </small>
                 </form>
-            </div>
-        </div>
-        
-        <!-- Дополнительная информация -->
-        <div class="card mt-3">
-            <div class="card-header">
-                <h5><i class="fas fa-chart-line"></i> Статистика</h5>
-            </div>
-            <div class="card-body">
-                <small class="text-muted">
-                    <strong>ID заказа:</strong> {{ order.id }}<br>
-                    <strong>Файлов:</strong> {{ order.files|length if order.files else 0 }}<br>
-                    <strong>Последнее обновление:</strong> {{ order.updated_at.strftime('%d.%m.%Y %H:%M') }}
-                </small>
             </div>
         </div>
     </div>
 </div>
 
-<!-- JavaScript для работы с файлами -->
 <script>
-// Глобальные переменные
-const ORDER_ID = ('{{ order.id }}');
-let fileStatusCache = {};
+const ORDER_ID = '{{ order.id }}';
 
-// Проверка статуса конкретного файла
-async function checkFileStatus(fileId, filename) {
-    const button = event.target.closest('button');
-    const originalHtml = button.innerHTML;
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-    button.disabled = true;
+// Показать панель общения
+function showCommunicationPanel() {
+    document.getElementById('communicationPanel').style.display = 'block';
+    loadMessageHistory();
+}
+
+// Скрыть панель общения
+function hideCommunicationPanel() {
+    document.getElementById('communicationPanel').style.display = 'none';
+}
+
+// Загрузить историю сообщений
+async function loadMessageHistory() {
+    const container = document.getElementById('messageHistory');
+    container.innerHTML = '<div class="text-center text-muted"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>';
     
     try {
-        // Проверяем доступность файла через HEAD запрос
-        const response = await fetch(`/files/download/${fileId}`, {
-            method: 'HEAD'
-        });
+        const response = await fetch(`/orders/${ORDER_ID}/messages`);
+        const data = await response.json();
         
-        const statusBadge = document.getElementById(`file-exists-${fileId}`);
-        let message = '';
+        if (data.messages && data.messages.length > 0) {
+            let html = '';
+            data.messages.forEach(message => {
+                const isAdmin = message.from_admin;
+                const badgeClass = isAdmin ? 'bg-primary' : 'bg-secondary';
+                const iconClass = isAdmin ? 'fa-user-shield' : 'fa-user';
+                
+                html += `
+                    <div class="d-flex mb-2 ${isAdmin ? 'justify-content-end' : ''}">
+                        <div class="card ${isAdmin ? 'bg-primary text-white' : 'bg-light'}" style="max-width: 80%;">
+                            <div class="card-body p-2">
+                                <div class="d-flex align-items-center mb-1">
+                                    <i class="fas ${iconClass} me-1"></i>
+                                    <small class="fw-bold">${message.sender}</small>
+                                    <small class="ms-auto opacity-75">
+                                        ${new Date(message.sent_at).toLocaleString('ru-RU')}
+                                    </small>
+                                </div>
+                                <div>${message.text}</div>
+                                ${message.delivered ? '' : '<small class="text-warning"><i class="fas fa-exclamation-triangle"></i> Не доставлено</small>'}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<div class="text-muted text-center">Сообщений пока нет</div>';
+        }
+    } catch (error) {
+        container.innerHTML = '<div class="text-danger text-center">Ошибка загрузки сообщений</div>';
+    }
+}
+
+// Отправить быстрое сообщение
+async function sendQuickMessage(message) {
+    if (!confirm(`Отправить сообщение: "${message}"?`)) return;
+    
+    try {
+        const formData = new FormData();
+        formData.append('message', message);
+        
+        const response = await fetch(`/orders/${ORDER_ID}/send_message`, {
+            method: 'POST',
+            body: formData
+        });
         
         if (response.ok) {
-            message = `✅ Файл "${filename}" доступен для скачивания\n`;
-            message += `📊 Статус: ${response.status} ${response.statusText}\n`;
-            
-            // Получаем информацию из заголовков
-            const contentLength = response.headers.get('Content-Length');
-            const contentType = response.headers.get('Content-Type');
-            const contentDisposition = response.headers.get('Content-Disposition');
-            
-            if (contentLength) {
-                const sizeMB = (parseInt(contentLength) / 1024 / 1024).toFixed(2);
-                message += `📏 Размер: ${sizeMB} MB\n`;
-            }
-            
-            if (contentType) {
-                message += `📝 Тип: ${contentType}\n`;
-            }
-            
-            if (contentDisposition) {
-                message += `📋 Заголовок: ${contentDisposition}\n`;
-            }
-            
-            if (statusBadge) {
-                statusBadge.className = 'badge bg-success';
-                statusBadge.textContent = 'доступен';
-            }
-            
-            fileStatusCache[fileId] = 'available';
+            showNotification('Сообщение отправлено!', 'success');
+            setTimeout(() => loadMessageHistory(), 1000);
         } else {
-            message = `❌ Файл "${filename}" недоступен\n`;
-            message += `📊 Статус: ${response.status} ${response.statusText}`;
-            
-            if (statusBadge) {
-                statusBadge.className = 'badge bg-danger';
-                statusBadge.textContent = 'недоступен';
-            }
-            
-            fileStatusCache[fileId] = 'unavailable';
+            showNotification('Ошибка отправки сообщения', 'error');
         }
-        
-
-        
     } catch (error) {
-        alert(`❌ Ошибка проверки файла "${filename}":\n${error.message}`);
+        showNotification('Ошибка: ' + error.message, 'error');
+    }
+}
+
+// Загрузить файлы от админа
+async function loadAdminFiles() {
+    const container = document.getElementById('adminFilesList');
+    container.innerHTML = '<div class="text-center text-muted"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>';
+    
+    try {
+        const response = await fetch(`/orders/${ORDER_ID}/admin_files`);
+        const data = await response.json();
         
-        const statusBadge = document.getElementById(`file-exists-${fileId}`);
-        if (statusBadge) {
-            statusBadge.className = 'badge bg-warning';
-            statusBadge.textContent = 'ошибка';
+        if (data.files && data.files.length > 0) {
+            let html = '<div class="list-group">';
+            data.files.forEach(file => {
+                const sentBadge = file.sent_to_user ? 
+                    '<span class="badge bg-success">Отправлен</span>' : 
+                    '<span class="badge bg-warning">Не отправлен</span>';
+                
+                html += `
+                    <div class="list-group-item">
+                        <div class="row align-items-center">
+                            <div class="col-md-8">
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-file me-2 text-success"></i>
+                                    <div>
+                                        <div class="fw-bold">${file.filename}</div>
+                                        <small class="text-muted">
+                                            ${(file.file_size / 1024 / 1024).toFixed(2)} MB • 
+                                            ${new Date(file.uploaded_at).toLocaleString('ru-RU')}
+                                        </small>
+                                        <div>${sentBadge}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4 text-end">
+                                <div class="btn-group">
+                                    <a href="/files/download/${file.id}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-download"></i>
+                                    </a>
+                                    ${!file.sent_to_user ? `
+                                    <button type="button" class="btn btn-sm btn-success" onclick="sendFileToUser(${file.id}, '${file.filename}')">
+                                        <i class="fas fa-paper-plane"></i> Отправить
+                                    </button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<div class="text-muted text-center">Файлов от админа пока нет</div>';
         }
-    } finally {
-        button.innerHTML = originalHtml;
-        button.disabled = false;
+    } catch (error) {
+        container.innerHTML = '<div class="text-danger text-center">Ошибка загрузки файлов</div>';
     }
 }
 
-// Проверка всех файлов
-async function checkAllFiles() {
-    const fileIds = [];
-    document.querySelectorAll('[id^="file-exists-"]').forEach(badge => {
-        const fileId = badge.id.replace('file-exists-', '');
-        fileIds.push(fileId);
-    });
+// Отправить файл пользователю
+async function sendFileToUser(fileId, filename) {
+    if (!confirm(`Отправить файл "${filename}" пользователю?`)) return;
     
-    if (fileIds.length === 0) {
-        alert('Нет файлов для проверки');
-        return;
-    }
-    
-    for (const fileId of fileIds) {
-        const button = document.querySelector(`button[onclick*="checkFileStatus('${fileId}'"]`);
-        if (button) {
-            button.click();
-            // Небольшая задержка между запросами
-            await new Promise(resolve => setTimeout(resolve, 500));
+    try {
+        const response = await fetch(`/orders/${ORDER_ID}/send_file/${fileId}`, {
+            method: 'POST'
+        });
+        
+        if (response.ok) {
+            showNotification('Файл отправлен пользователю!', 'success');
+            setTimeout(() => loadAdminFiles(), 1000);
+        } else {
+            showNotification('Ошибка отправки файла', 'error');
         }
+    } catch (error) {
+        showNotification('Ошибка: ' + error.message, 'error');
     }
 }
 
-// Копирование имени файла
-function copyFileName(filename) {
-    navigator.clipboard.writeText(filename).then(() => {
-        const button = event.target.closest('button');
-        const originalHtml = button.innerHTML;
-        
-        button.innerHTML = '<i class="fas fa-check"></i>';
-        button.classList.remove('btn-outline-secondary');
-        button.classList.add('btn-success');
-        
-        setTimeout(() => {
-            button.innerHTML = originalHtml;
-            button.classList.add('btn-outline-secondary');
-            button.classList.remove('btn-success');
-        }, 1500);
-    }).catch(err => {
-        alert('Ошибка копирования: ' + err);
-    });
-}
-
-// Отслеживание скачиваний
-function trackDownload(fileId, filename) {
-    console.log(`🔗 Начинается скачивание файла: ID=${fileId}, Имя="${filename}"`);
+// Показать уведомление
+function showNotification(message, type = 'info') {
+    const alertClass = {
+        'success': 'alert-success',
+        'error': 'alert-danger',
+        'warning': 'alert-warning',
+        'info': 'alert-info'
+    }[type] || 'alert-info';
     
-    // Анимация кнопки
-    const link = event.target.closest('a');
-    const icon = link.querySelector('i');
-    const originalClass = icon.className;
+    const alert = document.createElement('div');
+    alert.className = `alert ${alertClass} alert-dismissible fade show position-fixed`;
+    alert.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
     
-    icon.className = 'fas fa-spinner fa-spin';
+    document.body.appendChild(alert);
     
     setTimeout(() => {
-        icon.className = originalClass;
-    }, 2000);
-    
-    return true; // Продолжить стандартное поведение ссылки
-}
-
-// Обновление списка файлов
-async function refreshFilesList() {
-    try {
-        const response = await fetch(`/orders/${ORDER_ID}/files`);
-        const data = await response.json();
-        
-        let message = `🔄 Обновление списка файлов для заказа #${ORDER_ID}\n\n`;
-        message += `📊 Найдено файлов: ${data.files_count}\n\n`;
-        
-        if (data.files && data.files.length > 0) {
-            data.files.forEach((file, index) => {
-                message += `${index + 1}. ${file.filename}\n`;
-                message += `   🆔 ID: ${file.id}\n`;
-                message += `   📏 Размер: ${file.file_size ? (file.file_size / 1024 / 1024).toFixed(2) + ' MB' : 'неизвестно'}\n`;
-                message += `   💾 На диске: ${file.exists_on_disk ? '✅' : '❌'}\n`;
-                message += `   📅 Загружен: ${new Date(file.uploaded_at).toLocaleString('ru-RU')}\n\n`;
-            });
-            
-            message += '\n🔄 Обновить страницу для отображения изменений?';
-            
-            if (confirm(message)) {
-                location.reload();
-            }
-        } else {
-            message += '❌ Файлы не найдены в базе данных';
-            alert(message);
+        if (alert.parentNode) {
+            alert.parentNode.removeChild(alert);
         }
-        
-    } catch (error) {
-        alert(`❌ Ошибка обновления списка файлов:\n${error.message}`);
-    }
+    }, 5000);
 }
 
-// Поиск файлов в системе
-async function searchForFiles() {
-    try {
-        const response = await fetch(`/debug/files/${ORDER_ID}`);
-        const data = await response.json();
-        
-        let message = `🔍 Поиск файлов для заказа #${ORDER_ID}\n\n`;
-        message += `📊 Записей в БД: ${data.files_count}\n\n`;
-        
-        if (data.files && data.files.length > 0) {
-            data.files.forEach((file, index) => {
-                message += `${index + 1}. 📄 ${file.db_filename}\n`;
-                message += `   🆔 ID в БД: ${file.id}\n`;
-                message += `   💾 Файл на диске: ${file.disk_filename || 'не найден'}\n`;
-                message += `   📏 Размер в БД: ${file.file_size ? (file.file_size / 1024 / 1024).toFixed(2) + ' MB' : 'неизвестно'}\n`;
-                message += `   💿 Размер на диске: ${file.disk_size ? (file.disk_size / 1024 / 1024).toFixed(2) + ' MB' : 'недоступен'}\n`;
-                message += `   ✅ Существует: ${file.exists_on_disk ? 'да' : 'нет'}\n`;
-                message += `   🎯 Размеры совпадают: ${file.size_match !== null ? (file.size_match ? 'да' : 'нет') : 'н/д'}\n\n`;
-            });
-        } else {
-            message += '❌ Файлы не найдены ни в БД, ни на диске';
-        }
-        
-        alert(message);
-        
-    } catch (error) {
-        alert(`❌ Ошибка поиска файлов:\n${error.message}`);
-    }
-}
-
-// Подтверждение установки цены
+// Загрузить данные при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
-    const priceForm = document.querySelector('form[action*="/price"]');
-    if (priceForm) {
-        priceForm.addEventListener('submit', function(e) {
-            const price = this.querySelector('input[name="price"]').value;
-            if (price && !confirm(`Установить цену ${price} ₽ и отправить уведомление клиенту?`)) {
-                e.preventDefault();
+    loadAdminFiles();
+    
+    // Обработчик формы отправки сообщения
+    const messageForm = document.querySelector('form[action*="send_message"]');
+    if (messageForm) {
+        messageForm.addEventListener('submit', function() {
+            setTimeout(() => loadMessageHistory(), 1000);
+        });
+    }
+});
+</script>
+{% endblock %}
+
+// Создать пузырь сообщения
+function createMessageBubble(message) {
+    const isAdmin = message.from_admin;
+    const bubbleClass = isAdmin ? 'bg-primary text-white ms-auto' : 'bg-light text-dark me-auto';
+    const alignClass = isAdmin ? 'justify-content-end' : 'justify-content-start';
+    const iconClass = isAdmin ? 'fa-user-shield' : 'fa-user';
+    const senderColor = isAdmin ? 'text-white-50' : 'text-muted';
+    
+    const messageTime = new Date(message.sent_at).toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+    
+    return `
+        <div class="d-flex ${alignClass} mb-3">
+            <div class="card ${bubbleClass}" style="max-width: 75%; min-width: 200px;">
+                <div class="card-body p-3">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas ${iconClass} me-2"></i>
+                        <small class="fw-bold">${message.sender}</small>
+                        <small class="ms-auto ${senderColor}">
+                            ${messageTime}
+                        </small>
+                    </div>
+                    <div style="white-space: pre-wrap;">${escapeHtml(message.text)}</div>
+                    ${!message.delivered && !isAdmin ? 
+                        '<small class="text-warning mt-1"><i class="fas fa-exclamation-triangle"></i> Не доставлено</small>' : 
+                        ''
+                    }
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Прокрутить диалог вниз
+function scrollToBottom() {
+    const dialogWindow = document.getElementById('dialogWindow');
+    dialogWindow.scrollTop = dialogWindow.scrollHeight;
+}
+
+// Проверить количество непрочитанных сообщений
+async function checkUnreadMessages() {
+    try {
+        const response = await fetch(`/orders/${ORDER_ID}/unread_count`);
+        const data = await response.json();
+        
+        const badge = document.getElementById('unreadBadge');
+        if (data.unread_count > 0) {
+            badge.textContent = data.unread_count;
+            badge.style.display = 'inline';
+        } else {
+            badge.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Ошибка проверки непрочитанных сообщений:', error);
+    }
+}
+
+// Отправить быстрое сообщение
+async function sendQuickMessage(message) {
+    if (!confirm(`Отправить: "${message}"?`)) return;
+    
+    await sendMessage(message);
+}
+
+// Отправить сообщение
+async function sendMessage(messageText) {
+    const sendButton = document.getElementById('sendButton');
+    const messageInput = document.getElementById('messageInput');
+    
+    // Блокируем кнопку
+    sendButton.disabled = true;
+    sendButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Отправка...';
+    
+    try {
+        const formData = new FormData();
+        formData.append('message', messageText);
+        
+        const response = await fetch(`/orders/${ORDER_ID}/send_message`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            showNotification('Сообщение отправлено!', 'success');
+            
+            // Очищаем поле ввода если это было ручное сообщение
+            if (messageText === messageInput.value) {
+                messageInput.value = '';
+            }
+            
+            // Обновляем диалог через секунду
+            setTimeout(loadFullDialog, 1000);
+            
+        } else {
+            showNotification('Ошибка отправки сообщения', 'error');
+        }
+    } catch (error) {
+        showNotification('Ошибка: ' + error.message, 'error');
+    } finally {
+        // Разблокируем кнопку
+        sendButton.disabled = false;
+        sendButton.innerHTML = '<i class="fas fa-paper-plane"></i> Отправить';
+    }
+}
+
+// Обработчик формы сообщения
+document.addEventListener('DOMContentLoaded', function() {
+    const messageForm = document.getElementById('messageForm');
+    if (messageForm) {
+        messageForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const messageInput = document.getElementById('messageInput');
+            if (messageInput.value.trim()) {
+                sendMessage(messageInput.value.trim());
             }
         });
     }
     
-    // Проверяем статус всех файлов при загрузке страницы
-    setTimeout(checkAllFiles, 1000);
+    // Enter для отправки (Shift+Enter для новой строки)
+    const messageInput = document.getElementById('messageInput');
+    if (messageInput) {
+        messageInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (this.value.trim()) {
+                    sendMessage(this.value.trim());
+                }
+            }
+        });
+    }
 });
+
+// Экранирование HTML
+function escapeHtml(text) {
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;',
+        '\n': '<br>'
+    };
+    return text.replace(/[&<>"'\n]/g, function(m) { return map[m]; });
+}
 </script>
 
 <style>
-/* Дополнительные стили для файлов */
-.list-group-item {
-    border-left: 4px solid #007bff;
-    margin-bottom: 0.5rem;
+/* Стили для диалога */
+.card.bg-primary {
+    border-left: 4px solid #0056b3;
 }
 
-.list-group-item:hover {
-    background-color: #f8f9fa;
+.card.bg-light {
+    border-left: 4px solid #6c757d;
 }
 
-.btn-group .btn {
-    margin-right: 0;
+#dialogWindow {
+    background: linear-gradient(to bottom, #f8f9fa, #e9ecef);
 }
 
-.file-status-available {
-    color: #28a745;
-    font-weight: bold;
+#dialogWindow::-webkit-scrollbar {
+    width: 6px;
 }
 
-.file-status-unavailable {
-    color: #dc3545;
-    font-weight: bold;
+#dialogWindow::-webkit-scrollbar-track {
+    background: #f1f1f1;
 }
 
-.file-status-checking {
-    color: #ffc107;
-    font-weight: bold;
+#dialogWindow::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 3px;
 }
 
-/* Анимация для кнопок */
-.btn:hover {
-    transform: translateY(-1px);
-    transition: transform 0.2s ease;
+#dialogWindow::-webkit-scrollbar-thumb:hover {
+    background: #555;
 }
 
-/* Стили для отладочной информации */
-.small.text-warning {
-    font-family: 'Courier New', monospace;
-    font-size: 0.75rem;
+/* Анимация для сообщений */
+.card {
+    animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 </style>
-{% endblock %}

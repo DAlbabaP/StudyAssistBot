@@ -26,6 +26,7 @@ class Order(Base):
     user = relationship("User", back_populates="orders")
     files = relationship("OrderFile", back_populates="order", cascade="all, delete-orphan")
     status_history = relationship("StatusHistory", back_populates="order", cascade="all, delete-orphan")
+    messages = relationship("OrderMessage", back_populates="order", cascade="all, delete-orphan")  # 🆕 НОВОЕ
     
     def __repr__(self):
         return f"<Order(id={self.id}, work_type='{self.work_type}', status='{self.status}')>"
@@ -39,3 +40,25 @@ class Order(Base):
     def files_count(self):
         """Количество файлов в заказе"""
         return len(self.files) if self.files else 0
+    
+    @property
+    def client_files_count(self):
+        """Количество файлов от клиента"""
+        return len([f for f in self.files if not f.uploaded_by_admin]) if self.files else 0
+    
+    @property
+    def admin_files_count(self):
+        """Количество файлов от админа"""
+        return len([f for f in self.files if f.uploaded_by_admin]) if self.files else 0
+    
+    @property
+    def messages_count(self):
+        """Количество сообщений по заказу"""
+        return len(self.messages) if self.messages else 0
+    
+    @property
+    def last_message(self):
+        """Последнее сообщение по заказу"""
+        if self.messages:
+            return sorted(self.messages, key=lambda m: m.sent_at, reverse=True)[0]
+        return None
