@@ -1,9 +1,58 @@
 import os
 import uuid
 from pathlib import Path
-from aiogram.types import File as TelegramFile, Document
+from aiogram.types import File as TelegramFile, Document, PhotoSize
 from aiogram import Bot
 from app.config import settings
+
+
+async def save_photo(photo: PhotoSize, order_id: int, bot: Bot) -> tuple[str, str]:
+    """
+    Сохранить фотографию от пользователя
+    
+    Args:
+        photo: Объект PhotoSize от Telegram
+        order_id: ID заказа
+        bot: Экземпляр бота для скачивания
+        
+    Returns:
+        tuple: (путь к сохраненному файлу, оригинальное имя файла)
+    """
+    try:
+        # Создаем папку для заказа если её нет
+        order_dir = Path(settings.upload_path) / str(order_id)
+        order_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Генерируем имя файла для фото
+        original_filename = f"photo_{photo.file_id[:8]}.jpg"
+        
+        # Путь к файлу
+        file_path = order_dir / original_filename
+        
+        # Если файл с таким именем уже существует, добавляем номер
+        counter = 1
+        base_name = Path(original_filename).stem
+        extension = Path(original_filename).suffix
+        
+        while file_path.exists():
+            new_filename = f"{base_name}_{counter}{extension}"
+            file_path = order_dir / new_filename
+            original_filename = new_filename
+            counter += 1
+        
+        # Получаем файл от Telegram и скачиваем его
+        telegram_file = await bot.get_file(photo.file_id)
+        await bot.download_file(telegram_file.file_path, file_path)
+        
+        print(f"✅ Фото сохранено: {original_filename}")
+        print(f"   Путь: {file_path}")
+        print(f"   Размер: {photo.file_size} байт")
+        
+        return str(file_path), original_filename
+        
+    except Exception as e:
+        print(f"❌ Ошибка сохранения фото: {e}")
+        raise
 
 
 async def save_file(document: Document, order_id: int, bot: Bot) -> tuple[str, str]:
@@ -70,7 +119,7 @@ async def save_file(document: Document, order_id: int, bot: Bot) -> tuple[str, s
         print(f"   Путь: {file_path}")
         print(f"   Размер: {document.file_size} байт")
         
-        return final_filename, str(file_path)
+        return str(file_path), final_filename
         
     except Exception as e:
         print(f"❌ Ошибка сохранения файла {original_filename}: {e}")

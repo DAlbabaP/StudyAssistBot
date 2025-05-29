@@ -32,6 +32,11 @@ async def get_db_async():
     return db
 
 
+def get_db_session():
+    """Получить сессию базы данных для прямого использования"""
+    return SessionLocal()
+
+
 def create_tables():
     """Создать все таблицы в базе данных"""
     from app.database.models import Base

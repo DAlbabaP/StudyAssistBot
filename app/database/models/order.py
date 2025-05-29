@@ -26,7 +26,8 @@ class Order(Base):
     user = relationship("User", back_populates="orders")
     files = relationship("OrderFile", back_populates="order", cascade="all, delete-orphan")
     status_history = relationship("StatusHistory", back_populates="order", cascade="all, delete-orphan")
-    messages = relationship("OrderMessage", back_populates="order", cascade="all, delete-orphan")  # 🆕 НОВОЕ
+    messages = relationship("OrderMessage", back_populates="order", cascade="all, delete-orphan")
+    payments = relationship("OrderPayment", back_populates="order", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Order(id={self.id}, work_type='{self.work_type}', status='{self.status}')>"

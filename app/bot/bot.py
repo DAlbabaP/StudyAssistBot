@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.config import settings
-from app.bot.handlers import basic, orders, user_orders, admin, price_callbacks
+from app.bot.handlers import basic, orders, user_orders, admin, price_callbacks, user_messages
 from app.database.connection import create_tables
 
 # Настройка логирования
@@ -23,13 +23,13 @@ def create_bot():
     bot = Bot(token=settings.bot_token)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
-    
-    # Регистрация роутеров
+      # Регистрация роутеров
     dp.include_router(basic.router)
     dp.include_router(orders.router)
     dp.include_router(user_orders.router)
     dp.include_router(admin.router)
     dp.include_router(price_callbacks.router)
+    dp.include_router(user_messages.router)
     
     return bot, dp
 
@@ -48,13 +48,13 @@ async def main():
     bot = Bot(token=settings.bot_token)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
-    
-    # Регистрация роутеров
+      # Регистрация роутеров
     dp.include_router(basic.router)
     dp.include_router(orders.router)
     dp.include_router(user_orders.router)
     dp.include_router(admin.router)
     dp.include_router(price_callbacks.router)
+    dp.include_router(user_messages.router)
     
     # Запуск бота
     try:

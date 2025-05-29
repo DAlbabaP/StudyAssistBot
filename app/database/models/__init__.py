@@ -14,6 +14,7 @@ from .order import Order
 from .file import OrderFile
 from .status_history import StatusHistory
 from .message import OrderMessage
+from .payment import OrderPayment
 
 def get_status_emoji(status: OrderStatus) -> str:
     """Получить эмодзи для статуса"""

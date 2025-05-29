@@ -261,18 +261,31 @@ async def update_order_status(
     verify_admin(request)
     
     order_service = OrderService(db)
+    communication_service = CommunicationService(db)
     
     try:
         status = OrderStatus(new_status)
         success = order_service.update_order_status(order_id, status, "Изменено через веб-панель")
         
         if success:
+            # Если статус изменен на "ожидает оплаты", отправляем реквизиты
+            if status == OrderStatus.WAITING_PAYMENT:
+                from app.services.payment_service import PaymentService
+                payment_service = PaymentService(db)
+                
+                try:
+                    payment_message = payment_service.create_payment_request(order_id)
+                    await communication_service.send_message_to_user(
+                        order_id, 
+                        payment_message, 
+                        from_admin=True
+                    )
+                except Exception as e:
+                    print(f"❌ Ошибка отправки реквизитов: {e}")
+            
             return RedirectResponse(f"/orders/{order_id}?success=status_updated", status_code=302)
         else:
             raise HTTPException(status_code=400, detail="Ошибка обновления статуса")
-    
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Неверный статус")
     
     except ValueError:
         raise HTTPException(status_code=400, detail="Неверный статус")
@@ -802,9 +815,123 @@ async def get_admin_files(
                 "sent_at": file.sent_at.isoformat() if file.sent_at else None,
                 "exists_on_disk": os.path.exists(file.file_path) if file.file_path else False
             }
-            for file in admin_files
+            for file in admin_files        ]
+    }
+
+
+# === ПЛАТЕЖИ ===
+
+@app.get("/orders/{order_id}/payments")
+async def get_order_payments(
+    request: Request,
+    order_id: int,
+    db: Session = Depends(get_db)
+):
+    """Получить платежи по заказу"""
+    verify_admin(request)
+    
+    from app.services.payment_service import PaymentService
+    payment_service = PaymentService(db)
+    
+    payments = payment_service.get_order_payments(order_id)
+    
+    return {
+        "order_id": order_id,
+        "payments_count": len(payments),
+        "payments": [
+            {
+                "id": payment.id,
+                "amount": float(payment.amount),
+                "amount_text": payment.amount_rub,
+                "status": payment.status_text,
+                "is_verified": payment.is_verified,
+                "is_rejected": payment.is_rejected,
+                "screenshot_file_id": payment.screenshot_file_id,
+                "screenshot_message": payment.screenshot_message,
+                "created_at": payment.created_at.isoformat(),
+                "verified_at": payment.verified_at.isoformat() if payment.verified_at else None,
+                "rejected_at": payment.rejected_at.isoformat() if payment.rejected_at else None
+            }
+            for payment in payments
         ]
-    }    
+    }
+
+
+@app.post("/payments/{payment_id}/verify")
+async def verify_payment(
+    request: Request,
+    payment_id: int,
+    db: Session = Depends(get_db)
+):
+    """Подтвердить платеж"""
+    verify_admin(request)
+    
+    from app.services.payment_service import PaymentService
+    payment_service = PaymentService(db)
+    
+    success = payment_service.verify_payment(payment_id, request.session.get("admin_user_id", 1))
+    
+    if success:
+        return {"success": True, "message": "Платеж подтвержден"}
+    else:
+        raise HTTPException(status_code=400, detail="Ошибка подтверждения платежа")
+
+
+@app.post("/payments/{payment_id}/reject")
+async def reject_payment(
+    request: Request,
+    payment_id: int,
+    reason: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Отклонить платеж"""
+    verify_admin(request)
+    
+    from app.services.payment_service import PaymentService
+    payment_service = PaymentService(db)
+    
+    success = payment_service.reject_payment(payment_id, reason, request.session.get("admin_user_id", 1))
+    
+    if success:
+        return {"success": True, "message": "Платеж отклонен"}
+    else:
+        raise HTTPException(status_code=400, detail="Ошибка отклонения платежа")
+
+
+@app.get("/admin/pending_payments")
+async def get_pending_payments(
+    request: Request,
+    limit: int = 20,
+    db: Session = Depends(get_db)
+):
+    """Получить платежи на проверке"""
+    verify_admin(request)
+    
+    from app.services.payment_service import PaymentService
+    payment_service = PaymentService(db)
+    
+    payments = payment_service.get_pending_payments(limit)
+    
+    return {
+        "pending_count": len(payments),
+        "payments": [
+            {
+                "id": payment.id,
+                "order_id": payment.order_id,
+                "order_topic": payment.order.short_topic,
+                "amount": float(payment.amount),
+                "amount_text": payment.amount_rub,
+                "user_name": payment.order.user.full_name,
+                "screenshot_file_id": payment.screenshot_file_id,
+                "screenshot_message": payment.screenshot_message,
+                "created_at": payment.created_at.isoformat()
+            }
+            for payment in payments
+        ]
+    }
+
+
+    
 
 
 if __name__ == "__main__":

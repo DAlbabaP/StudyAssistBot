@@ -5,7 +5,7 @@ from app.database.models.file import OrderFile
 from app.database.models.status_history import StatusHistory
 from app.database.models import OrderStatus
 from app.database.models.user import User
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 import math
 import asyncio
@@ -55,9 +55,22 @@ class OrderService:
             'orders': orders,
             'total': total,
             'page': page,
-            'per_page': per_page,
-            'total_pages': math.ceil(total / per_page) if total > 0 else 1
+            'per_page': per_page,            'total_pages': math.ceil(total / per_page) if total > 0 else 1
         }
+
+    def get_user_orders_by_status(self, user_id: int, status: Union[OrderStatus, List[OrderStatus]]) -> List[Order]:
+        """Получить заказы пользователя по статусу (или статусам)"""
+        
+        query = self.db.query(Order).filter(Order.user_id == user_id)
+        
+        if isinstance(status, list):
+            # Если передан список статусов
+            query = query.filter(Order.status.in_(status))
+        else:
+            # Если передан один статус
+            query = query.filter(Order.status == status)
+            
+        return query.order_by(desc(Order.created_at)).all()
 
     def get_orders_by_status(self, status: OrderStatus = None, page: int = 1, 
                            per_page: int = 10) -> Dict[str, Any]:
