@@ -931,7 +931,51 @@ async def get_pending_payments(
     }
 
 
-    
+# === ОТЛАДОЧНЫЕ ЭНДПОИНТЫ ===
+
+@app.get("/debug/payments/{order_id}")
+async def debug_payments(
+    order_id: int,
+    db: Session = Depends(get_db)
+):
+    """Отладочный эндпоинт для платежей БЕЗ проверки авторизации"""
+    try:
+        from app.services.payment_service import PaymentService
+        payment_service = PaymentService(db)
+        
+        payments = payment_service.get_order_payments(order_id)
+        
+        result = {
+            "order_id": order_id,
+            "payments_count": len(payments),
+            "debug": True,
+            "payments": []
+        }
+        
+        for payment in payments:
+            result["payments"].append({
+                "id": payment.id,
+                "amount": float(payment.amount),
+                "amount_text": payment.amount_rub,
+                "status": payment.status_text,
+                "is_verified": payment.is_verified,
+                "is_rejected": payment.is_rejected,
+                "screenshot_file_id": payment.screenshot_file_id,
+                "screenshot_message": payment.screenshot_message,
+                "created_at": payment.created_at.isoformat(),
+                "verified_at": payment.verified_at.isoformat() if payment.verified_at else None,
+                "rejected_at": payment.rejected_at.isoformat() if payment.rejected_at else None
+            })
+        
+        return result
+        
+    except Exception as e:
+        import traceback
+        return {
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "order_id": order_id
+        }
 
 
 if __name__ == "__main__":

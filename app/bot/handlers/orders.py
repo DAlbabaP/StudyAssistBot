@@ -245,10 +245,47 @@ async def process_file(message: Message, state: FSMContext):
         f"📎 Всего файлов: {len(files)}",
         parse_mode="HTML"
     )
-
+@router.message(StateFilter(OrderStates.FILES), F.photo)
+async def process_photo(message: Message, state: FSMContext):
+    """Обработка загрузки фото чека"""
+    photo = message.photo[-1]  # Берем фото максимального размера
+    
+    # Проверяем размер файла
+    if photo.file_size > 20 * 1024 * 1024:  # 20 МБ
+        await message.answer(
+            f"❌ Фото слишком большое ({format_file_size(photo.file_size)})\n"
+            f"Максимальный размер: 20 МБ"
+        )
+        return
+    
+    # 🔥 ИСПРАВЛЕНО: Сохраняем фото как документ
+    data = await state.get_data()
+    files = data.get('files', [])
+    
+    # Создаем объект для фото как для документа
+    photo_filename = f"photo_receipt_{len(files)+1}.jpg"
+    
+    files.append({
+        'file_id': photo.file_id,
+        'filename': photo_filename,
+        'size': photo.file_size,
+        'mime_type': 'image/jpeg',
+        'document': photo,  # Сохраняем объект фото
+        'is_photo': True    # Помечаем как фото
+    })
+    
+    await state.update_data(files=files)
+    
+    await message.answer(
+        f"✅ Фото чека <b>{photo_filename}</b> добавлено\n"
+        f"📊 Размер: {format_file_size(photo.file_size)}\n"
+        f"📎 Всего файлов: {len(files)}",
+        parse_mode="HTML"
+    )
 
 @router.message(StateFilter(OrderStates.FILES))
 async def process_files_finish(message: Message, state: FSMContext):
+
     """Завершение загрузки файлов"""
     if message.text == "❌ Отменить":
         await state.clear()

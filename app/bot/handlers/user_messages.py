@@ -222,8 +222,7 @@ async def handle_user_photo(message: Message, state: FSMContext):
                 "❌ Пользователь не найден. Нажмите /start для регистрации.",
                 reply_markup=get_main_menu()
             )
-            return
-          # Ищем заказ в статусе "ожидает оплаты"
+            return          # Ищем заказ в статусе "ожидает оплаты"
         payment_orders = order_service.get_user_orders_by_status(
             user.id,  # Используем ID пользователя из БД, а не telegram_id
             OrderStatus.WAITING_PAYMENT
@@ -278,7 +277,6 @@ async def handle_user_photo(message: Message, state: FSMContext):
                 
             finally:
                 await bot.session.close()
-        
         else:            # Нет заказов в ожидании оплаты - обрабатываем как обычный файл
             active_orders = order_service.get_user_orders_by_status(
                 user.id,  # Используем ID пользователя из БД, а не telegram_id

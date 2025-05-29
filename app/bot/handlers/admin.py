@@ -502,3 +502,4 @@ async def admin_broadcast_process(message: Message, state: FSMContext):
         reply_markup=get_main_menu(),
         parse_mode="HTML"
     )
+    
