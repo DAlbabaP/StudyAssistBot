@@ -15,8 +15,7 @@
             <a class="navbar-brand" href="/dashboard">
                 <i class="fas fa-robot"></i> Telegram Bot Admin
             </a>
-            
-            <div class="navbar-nav ms-auto">
+              <div class="navbar-nav ms-auto">
                 <a class="nav-link" href="/dashboard">
                     <i class="fas fa-tachometer-alt"></i> Главная
                 </a>
@@ -25,6 +24,9 @@
                 </a>
                 <a class="nav-link" href="/users">
                     <i class="fas fa-users"></i> Пользователи
+                </a>
+                <a class="nav-link" href="/analytics">
+                    <i class="fas fa-chart-bar"></i> Аналитика
                 </a>
                 <a class="nav-link" href="/logout">
                     <i class="fas fa-sign-out-alt"></i> Выход
@@ -37,9 +39,8 @@
     <div class="container-fluid mt-4">
         {% block content %}
         {% endblock %}
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    </div>    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/ui-enhancements.js"></script>
     <script src="/static/js/admin.js"></script>
 </body>
 </html>

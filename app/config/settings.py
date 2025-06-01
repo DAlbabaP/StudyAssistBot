@@ -16,13 +16,20 @@ class Settings(BaseSettings):
     # Files
     upload_path: str = "./uploads/"
     max_file_size: int = 20971520  # 20 MB
-    
-    # Admin Panel
+      # Admin Panel
     secret_key: str
     admin_host: str = "127.0.0.1"
     admin_port: int = 8000
     debug: bool = False
-      # Payment
+    
+    # Security Settings
+    rate_limit_requests: int = 100
+    rate_limit_window: int = 60
+    rate_limit_storage_expire: int = 3600
+    max_blocked_duration: int = 3600
+    security_log_level: str = "INFO"
+    
+    # Payment
     tbank_api_key: Optional[str] = None
     
     # Payment Details

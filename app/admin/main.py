@@ -20,6 +20,7 @@ from app.database.connection import get_db
 from app.services.user_service import UserService
 from app.services.order_service import OrderService
 from app.database.models import OrderStatus
+from app.admin.routes.analytics_api import router as analytics_router
 
 
 from fastapi.exception_handlers import (
@@ -44,6 +45,9 @@ def create_app():
 # Подключение статических файлов и шаблонов
 app.mount("/static", StaticFiles(directory="app/admin/static"), name="static")
 templates = Jinja2Templates(directory="app/admin/templates")
+
+# Подключение роутеров
+app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 
 
 # Простая авторизация (в реальном проекте используйте более надежную)
@@ -106,8 +110,7 @@ async def admin_dashboard(
     
     user_service = UserService(db)
     order_service = OrderService(db)
-    
-    # Получаем статистику
+      # Получаем статистику
     stats = order_service.get_orders_statistics()
     users_count = user_service.get_users_count()
     
@@ -123,6 +126,23 @@ async def admin_dashboard(
             "recent_orders": recent_orders['orders']
         }
     )
+
+
+@app.get("/analytics", response_class=HTMLResponse)
+async def analytics_page(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Страница аналитики"""
+    verify_admin(request)
+    
+    return templates.TemplateResponse(
+        "analytics.html",
+        {
+            "request": request
+        }
+    )
+
 
 @app.get("/admin/recent_messages")
 async def get_recent_user_messages(

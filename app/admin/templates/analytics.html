@@ -1,0 +1,914 @@
+{% extends "base.html" %}
+
+{% block title %}Аналитика - Админ-панель{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h1><i class="fas fa-chart-line"></i> Аналитика и метрики</h1>
+            <div class="btn-group">
+                <button class="btn btn-outline-primary" onclick="refreshAllCharts()">
+                    <i class="fas fa-sync"></i> Обновить
+                </button>
+                <div class="btn-group">
+                    <button type="button" class="btn btn-outline-success dropdown-toggle" data-bs-toggle="dropdown">
+                        <i class="fas fa-download"></i> Экспорт
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#" onclick="exportData('csv')">
+                            <i class="fas fa-file-csv"></i> CSV
+                        </a></li>
+                        <li><a class="dropdown-item" href="#" onclick="exportData('excel')">
+                            <i class="fas fa-file-excel"></i> Excel
+                        </a></li>
+                        <li><a class="dropdown-item" href="#" onclick="exportData('json')">
+                            <i class="fas fa-file-code"></i> JSON
+                        </a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Статистика в реальном времени -->
+<div class="row mt-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h3 id="totalOrders">-</h3>
+                        <p class="mb-0">Всего заказов</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-list fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h3 id="totalRevenue">-</h3>
+                        <p class="mb-0">Общий доход</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-ruble-sign fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h3 id="avgOrderValue">-</h3>
+                        <p class="mb-0">Средний чек</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-calculator fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h3 id="completionRate">-</h3>
+                        <p class="mb-0">Процент завершения</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-percentage fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Графики -->
+<div class="row mt-4">
+    <!-- Временная динамика заказов -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-line"></i> Динамика заказов</h5>
+                <select class="form-select form-select-sm" style="width: auto;" id="ordersTimelineRange" onchange="updateOrdersTimeline()">
+                    <option value="7">7 дней</option>
+                    <option value="30" selected>30 дней</option>
+                    <option value="90">90 дней</option>
+                    <option value="365">1 год</option>
+                </select>
+            </div>
+            <div class="card-body">
+                <canvas id="ordersTimelineChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Динамика доходов -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-area"></i> Динамика доходов</h5>
+                <select class="form-select form-select-sm" style="width: auto;" id="revenueTimelineRange" onchange="updateRevenueTimeline()">
+                    <option value="7">7 дней</option>
+                    <option value="30" selected>30 дней</option>
+                    <option value="90">90 дней</option>
+                    <option value="365">1 год</option>
+                </select>
+            </div>
+            <div class="card-body">
+                <canvas id="revenueTimelineChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <!-- Распределение по статусам -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-pie"></i> Статусы заказов</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="statusDistributionChart" width="300" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Воронка конверсии -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-funnel-dollar"></i> Воронка конверсии</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="conversionFunnelChart" width="300" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Типы работ -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-bar"></i> Популярные типы работ</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="workTypesChart" width="300" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Финансовая аналитика -->
+<div class="row mt-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-coins"></i> Финансовая аналитика</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <canvas id="monthlyRevenueChart" width="400" height="200"></canvas>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Метрика</th>
+                                        <th>Значение</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="financialMetrics">
+                                    <!-- Данные будут загружены динамически -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Операционные метрики -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-cogs"></i> Операционные метрики</h5>
+            </div>
+            <div class="card-body">
+                <div id="operationalMetrics">
+                    <!-- Данные будут загружены динамически -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Пользовательская аналитика -->
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-users"></i> Аналитика пользователей</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="userActivityChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-crown"></i> Топ пользователи</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Пользователь</th>
+                                <th>Заказов</th>
+                                <th>Потрачено</th>
+                            </tr>
+                        </thead>
+                        <tbody id="topUsers">
+                            <!-- Данные будут загружены динамически -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Активность по времени -->
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-clock"></i> Активность по дням недели</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="weekdayActivityChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-business-time"></i> Активность по часам</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="hourlyActivityChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Загрузка Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- JavaScript для аналитики -->
+<script>
+// Глобальные переменные для графиков
+let ordersTimelineChart, revenueTimelineChart, statusDistributionChart, 
+    conversionFunnelChart, workTypesChart, monthlyRevenueChart, 
+    userActivityChart, weekdayActivityChart, hourlyActivityChart;
+
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    initializeAnalytics();
+    
+    // Автообновление каждые 5 минут
+    setInterval(refreshRealtimeStats, 5 * 60 * 1000);
+});
+
+// Инициализация аналитики
+async function initializeAnalytics() {
+    try {
+        await Promise.all([
+            loadOverviewStats(),
+            loadOrdersTimeline(),
+            loadRevenueTimeline(),
+            loadStatusDistribution(),
+            loadConversionFunnel(),
+            loadWorkTypes(),
+            loadFinancialAnalytics(),
+            loadOperationalMetrics(),
+            loadUserAnalytics()
+        ]);
+        
+        showNotification('Аналитика загружена успешно', 'success');
+    } catch (error) {
+        console.error('Ошибка загрузки аналитики:', error);
+        showNotification('Ошибка загрузки аналитики', 'error');
+    }
+}
+
+// Загрузка общей статистики
+async function loadOverviewStats() {
+    try {
+        const response = await fetch('/api/analytics/overview');
+        const data = await response.json();
+        
+        document.getElementById('totalOrders').textContent = data.total_orders.toLocaleString();
+        document.getElementById('totalRevenue').textContent = formatCurrency(data.total_revenue);
+        document.getElementById('avgOrderValue').textContent = formatCurrency(data.average_order_value);
+        document.getElementById('completionRate').textContent = data.completion_rate + '%';
+    } catch (error) {
+        console.error('Ошибка загрузки общей статистики:', error);
+    }
+}
+
+// Загрузка статистики в реальном времени
+async function refreshRealtimeStats() {
+    try {
+        const response = await fetch('/api/analytics/realtime');
+        const data = await response.json();
+        
+        // Обновляем индикаторы в реальном времени
+        updateRealtimeIndicators(data);
+    } catch (error) {
+        console.error('Ошибка обновления статистики в реальном времени:', error);
+    }
+}
+
+// Загрузка временной динамики заказов
+async function loadOrdersTimeline(days = 60) {
+    try {
+        console.log('Загрузка данных заказов за', days, 'дней');
+        const response = await fetch(`/api/analytics/orders/timeline?days=${days}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log('Данные заказов получены:', data);
+        
+        if (!data || data.length === 0) {
+            console.warn('Нет данных для отображения графика заказов');
+            return;
+        }
+        
+        const ctx = document.getElementById('ordersTimelineChart').getContext('2d');
+        
+        if (ordersTimelineChart) {
+            ordersTimelineChart.destroy();
+        }
+        
+        ordersTimelineChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.map(item => formatDate(item.date)),
+                datasets: [{
+                    label: 'Заказы',
+                    data: data.map(item => item.orders_count),
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки временной динамики заказов:', error);
+    }
+}
+
+// Загрузка временной динамики доходов
+async function loadRevenueTimeline(days = 60) {
+    try {
+        console.log('Загрузка данных доходов за', days, 'дней');
+        const response = await fetch(`/api/analytics/revenue/timeline?days=${days}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log('Данные доходов получены:', data);
+        
+        if (!data || data.length === 0) {
+            console.warn('Нет данных для отображения графика доходов');
+            return;
+        }
+        
+        const ctx = document.getElementById('revenueTimelineChart').getContext('2d');
+        
+        if (revenueTimelineChart) {
+            revenueTimelineChart.destroy();
+        }
+        
+        revenueTimelineChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.map(item => formatDate(item.date)),
+                datasets: [{
+                    label: 'Доход (₽)',
+                    data: data.map(item => item.revenue),
+                    borderColor: 'rgb(255, 99, 132)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    fill: true,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return formatCurrency(value);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки временной динамики доходов:', error);
+    }
+}
+
+// Загрузка распределения по статусам
+async function loadStatusDistribution() {
+    try {
+        const response = await fetch('/api/analytics/orders/status');
+        const data = await response.json();
+        
+        const ctx = document.getElementById('statusDistributionChart').getContext('2d');
+        
+        if (statusDistributionChart) {
+            statusDistributionChart.destroy();
+        }
+        
+        const statusLabels = {
+            'new': 'Новые',
+            'in_progress': 'В работе',
+            'ready': 'Готовые',
+            'waiting_payment': 'Ожидают оплаты',
+            'sent': 'Отправленные',
+            'cancelled': 'Отмененные'
+        };
+        
+        const labels = Object.keys(data).map(status => statusLabels[status] || status);
+        const values = Object.values(data);
+        
+        statusDistributionChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: [
+                        '#FF6384',
+                        '#36A2EB', 
+                        '#FFCE56',
+                        '#4BC0C0',
+                        '#9966FF',
+                        '#FF9F40'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки распределения по статусам:', error);
+    }
+}
+
+// Загрузка воронки конверсии
+async function loadConversionFunnel() {
+    try {
+        const response = await fetch('/api/analytics/conversion/funnel');
+        const data = await response.json();
+        
+        const ctx = document.getElementById('conversionFunnelChart').getContext('2d');
+        
+        if (conversionFunnelChart) {
+            conversionFunnelChart.destroy();
+        }
+        
+        const stages = Object.keys(data.funnel_stages);
+        const counts = stages.map(stage => data.funnel_stages[stage].count);
+        
+        conversionFunnelChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: stages.map(stage => stage.replace('_', ' ')),
+                datasets: [{
+                    label: 'Количество',
+                    data: counts,
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y'
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки воронки конверсии:', error);
+    }
+}
+
+// Загрузка аналитики по типам работ
+async function loadWorkTypes() {
+    try {
+        const response = await fetch('/api/analytics/work-types');
+        const data = await response.json();
+        
+        const ctx = document.getElementById('workTypesChart').getContext('2d');
+        
+        if (workTypesChart) {
+            workTypesChart.destroy();
+        }
+        
+        workTypesChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: data.slice(0, 10).map(item => item.work_type),
+                datasets: [{
+                    label: 'Количество заказов',
+                    data: data.slice(0, 10).map(item => item.orders_count),
+                    backgroundColor: 'rgba(255, 159, 64, 0.6)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки аналитики по типам работ:', error);
+    }
+}
+
+// Загрузка финансовой аналитики
+async function loadFinancialAnalytics() {
+    try {
+        const response = await fetch('/api/analytics/financial');
+        const data = await response.json();
+        
+        // График месячных доходов
+        const ctx = document.getElementById('monthlyRevenueChart').getContext('2d');
+        
+        if (monthlyRevenueChart) {
+            monthlyRevenueChart.destroy();
+        }
+        
+        monthlyRevenueChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: data.monthly_revenues.map(item => item.month),
+                datasets: [{
+                    label: 'Доход (₽)',
+                    data: data.monthly_revenues.map(item => item.revenue),
+                    backgroundColor: 'rgba(75, 192, 192, 0.6)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return formatCurrency(value);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Таблица финансовых метрик
+        const metricsTable = document.getElementById('financialMetrics');
+        metricsTable.innerHTML = `
+            <tr>
+                <td>Общий доход</td>
+                <td>${formatCurrency(data.total_revenue)}</td>
+            </tr>
+            <tr>
+                <td>Доход за месяц</td>
+                <td>${formatCurrency(data.monthly_revenue)}</td>
+            </tr>
+            <tr>
+                <td>Средний платеж</td>
+                <td>${formatCurrency(data.average_payment)}</td>
+            </tr>
+            <tr>
+                <td>Подтвержденные платежи</td>
+                <td>${data.payment_stats.verified} из ${data.payment_stats.total}</td>
+            </tr>
+            <tr>
+                <td>Процент подтверждения</td>
+                <td>${data.payment_stats.verification_rate}%</td>
+            </tr>
+        `;
+    } catch (error) {
+        console.error('Ошибка загрузки финансовой аналитики:', error);
+    }
+}
+
+// Загрузка операционных метрик
+async function loadOperationalMetrics() {
+    try {
+        const response = await fetch('/api/analytics/operational');
+        const data = await response.json();
+        
+        const container = document.getElementById('operationalMetrics');
+        container.innerHTML = `
+            <div class="metric-item mb-3">
+                <small class="text-muted">Среднее время выполнения</small>
+                <h5>${data.avg_completion_time_hours} часов</h5>
+            </div>
+            <div class="metric-item mb-3">
+                <small class="text-muted">Всего сообщений</small>
+                <h5>${data.message_stats.total}</h5>
+            </div>
+            <div class="metric-item mb-3">
+                <small class="text-muted">От админов</small>
+                <h5>${data.message_stats.from_admin} (${data.message_stats.admin_ratio}%)</h5>
+            </div>
+            <div class="metric-item mb-3">
+                <small class="text-muted">От пользователей</small>
+                <h5>${data.message_stats.from_users}</h5>
+            </div>
+        `;
+        
+        // График активности по дням недели
+        const weekdayCtx = document.getElementById('weekdayActivityChart').getContext('2d');
+        
+        if (weekdayActivityChart) {
+            weekdayActivityChart.destroy();
+        }
+        
+        weekdayActivityChart = new Chart(weekdayCtx, {
+            type: 'bar',
+            data: {
+                labels: data.weekday_activity.map(item => item.day),
+                datasets: [{
+                    label: 'Заказы',
+                    data: data.weekday_activity.map(item => item.orders),
+                    backgroundColor: 'rgba(153, 102, 255, 0.6)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+        
+        // График активности по часам
+        const hourlyCtx = document.getElementById('hourlyActivityChart').getContext('2d');
+        
+        if (hourlyActivityChart) {
+            hourlyActivityChart.destroy();
+        }
+        
+        hourlyActivityChart = new Chart(hourlyCtx, {
+            type: 'line',
+            data: {
+                labels: data.hourly_activity.map(item => item.hour + ':00'),
+                datasets: [{
+                    label: 'Заказы',
+                    data: data.hourly_activity.map(item => item.orders),
+                    borderColor: 'rgb(255, 205, 86)',
+                    backgroundColor: 'rgba(255, 205, 86, 0.2)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки операционных метрик:', error);
+    }
+}
+
+// Загрузка пользовательской аналитики
+async function loadUserAnalytics() {
+    try {
+        const response = await fetch('/api/analytics/users');
+        const data = await response.json();
+        
+        // График новых пользователей
+        const ctx = document.getElementById('userActivityChart').getContext('2d');
+        
+        if (userActivityChart) {
+            userActivityChart.destroy();
+        }
+        
+        userActivityChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.new_users_daily.map(item => formatDate(item.date)),
+                datasets: [{
+                    label: 'Новые пользователи',
+                    data: data.new_users_daily.map(item => item.count),
+                    borderColor: 'rgb(255, 99, 132)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+        
+        // Таблица топ пользователей
+        const topUsersTable = document.getElementById('topUsers');
+        topUsersTable.innerHTML = data.top_users.map(user => `
+            <tr>
+                <td>
+                    ${user.name}
+                    ${user.username ? `<br><small class="text-muted">@${user.username}</small>` : ''}
+                </td>
+                <td>${user.orders_count}</td>
+                <td>${formatCurrency(user.total_spent)}</td>
+            </tr>
+        `).join('');
+    } catch (error) {
+        console.error('Ошибка загрузки пользовательской аналитики:', error);
+    }
+}
+
+// Обновление временной динамики заказов
+function updateOrdersTimeline() {
+    const days = document.getElementById('ordersTimelineRange').value;
+    loadOrdersTimeline(parseInt(days));
+}
+
+// Обновление временной динамики доходов
+function updateRevenueTimeline() {
+    const days = document.getElementById('revenueTimelineRange').value;
+    loadRevenueTimeline(parseInt(days));
+}
+
+// Обновление всех графиков
+function refreshAllCharts() {
+    showNotification('Обновление аналитики...', 'info');
+    initializeAnalytics();
+}
+
+// Экспорт данных
+function exportData(format) {
+    const startDate = prompt('Начальная дата (YYYY-MM-DD):');
+    const endDate = prompt('Конечная дата (YYYY-MM-DD):');
+    
+    let url = `/api/analytics/export/${format}`;
+    const params = new URLSearchParams();
+    
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    
+    if (params.toString()) {
+        url += '?' + params.toString();
+    }
+    
+    window.open(url, '_blank');
+}
+
+// Обновляем индикаторы реального времени
+function updateRealtimeIndicators(data) {
+    // Обновляем индикаторы реального времени
+    if (data.orders_today !== undefined) {
+        // Добавляем всплывающие подсказки с реальным временем
+        document.getElementById('totalOrders').title = `Заказов сегодня: ${data.orders_today}`;
+    }
+}
+
+function formatTime(timeString) {
+    const date = new Date(timeString);
+    return date.toLocaleTimeString('ru-RU', {
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+// Утилиты форматирования
+function formatCurrency(value) {
+    return new Intl.NumberFormat('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    }).format(value || 0);
+}
+
+function formatDate(dateString) {
+    return new Date(dateString).toLocaleDateString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit'
+    });
+}
+
+function showNotification(message, type = 'info') {
+    // Используем существующую функцию уведомлений из admin.js
+    if (typeof window.showNotification === 'function') {
+        window.showNotification(message, type);
+        return;
+    }
+    
+    console.log(`[${type.toUpperCase()}] ${message}`);
+    
+    // Создаем элемент уведомления
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type === 'error' ? 'danger' : type === 'success' ? 'success' : 'info'} alert-dismissible fade show`;
+    notification.style.position = 'fixed';
+    notification.style.top = '20px';
+    notification.style.right = '20px';
+    notification.style.zIndex = '9999';
+    notification.style.minWidth = '300px';
+    
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Автоматически удаляем через 5 секунд
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 5000);
+}
+</script>
+
+<style>
+.metric-item {
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 5px;
+    border-left: 4px solid #007bff;
+}
+
+.card-header select {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+}
+
+.card-header {
+    position: relative;
+}
+
+canvas {
+    max-height: 300px !important;
+}
+</style>
+
+{% endblock %}
